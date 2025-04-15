@@ -199,123 +199,15 @@ def set_random_seeds(seed=42):
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
 
-
+# Function that shows whether GPU or CPU is used for training and/or inference.
 def get_device():
     """Return the torch device (GPU if available, else CPU)."""
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Function to split data using group numbers in the command-line. 
+# Function to split data into training-validation-test subsets using group numbers specified in command-line. 
 def get_indices(val_group, test_group, groups):
     val_idx = np.where(groups == val_group)[0]
     test_idx = np.where(groups == test_group)[0]
     train_idx = np.where((groups != val_group) & (groups != test_group))[0]
     return train_idx, val_idx, test_idx
 
-
-# # Optuna Objective function for training the models and hyperparameter optimization with early stopping 
-# def objective(trial):
-#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-#     # Create training and validation datasets using DNADualDataset.
-#     train_dataset = DNADualDataset(train_idx, tss, tts, TPM, tss_mean, tss_std, tts_mean, tts_std)
-#     val_dataset = DNADualDataset(val_idx, tss, tts, TPM, tss_mean, tss_std, tts_mean, tts_std)
-    
-#     batch_size = trial.suggest_categorical("batch_size", [64, 128, 256])
-#     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-#     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-    
-#     model = TwoBranchCNN(trial).to(device)
-    
-#     lr = trial.suggest_float("lr", 1e-5, 1e-2, log=True)
-#     optimizer = optim.AdamW(model.parameters(), lr=lr)
-    
-#     criterion = nn.MSELoss()
-#     max_epochs = 50
-    
-#     lookahead_epochs = 10
-#     min_improvement = 0.01
-    
-#     best_val_loss = float('inf')
-#     best_epoch = 0
-#     best_checkpoint = None
-#     stopped_early = False
-    
-#     train_loss_history = []
-#     val_loss_history = []
-    
-#     for epoch in range(max_epochs):
-#         model.train()
-#         train_loss = 0.0
-#         for x_tss, x_tts, target in train_loader:
-#             x_tss, x_tts = x_tss.to(device), x_tts.to(device)
-#             target = target.to(device).unsqueeze(1)
-#             optimizer.zero_grad()
-#             output = model(x_tss, x_tts)
-#             loss = criterion(output, target)
-#             loss.backward()
-#             optimizer.step()
-#             train_loss += loss.item() * x_tss.size(0)
-#         train_loss /= len(train_loader.dataset)
-#         train_loss_history.append(train_loss)
-        
-#         model.eval()
-#         val_loss = 0.0
-#         with torch.no_grad():
-#             for x_tss, x_tts, target in val_loader:
-#                 x_tss, x_tts = x_tss.to(device), x_tts.to(device)
-#                 target = target.to(device).unsqueeze(1)
-#                 output = model(x_tss, x_tts)
-#                 loss = criterion(output, target)
-#                 val_loss += loss.item() * x_tss.size(0)
-#         val_loss /= len(val_loader.dataset)
-#         val_loss_history.append(val_loss)
-#         rmse = val_loss ** 0.5
-        
-#         print(f"Epoch {epoch+1}: train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, RMSE={rmse:.4f}")
-        
-#         if val_loss < best_val_loss:
-#             best_val_loss = val_loss
-#             best_epoch = epoch + 1
-#             best_checkpoint = {
-#                 'trial_number': trial.number,
-#                 'epoch': best_epoch,
-#                 'model_state_dict': deepcopy(model.state_dict()),
-#                 'optimizer_state_dict': deepcopy(optimizer.state_dict()),
-#                 'hyperparameters': trial.params,
-#                 'val_loss': val_loss,
-#                 'RMSE': rmse,
-#                 'train_loss_history': train_loss_history,
-#                 'val_loss_history': val_loss_history,
-#             }
-
-#             # I can also save the best models immediately here each time.
-        
-#         if (epoch + 1 - best_epoch) >= lookahead_epochs:
-#             improvement = best_val_loss - val_loss
-#             if improvement < min_improvement:
-#                 print(f"Early stopping triggered at epoch {epoch+1}: Improvement over best ({best_val_loss:.4f}) is only {improvement:.4f} (< {min_improvement}) after {lookahead_epochs} epochs.")
-#                 trial.set_user_attr("early_stopped", True)
-#                 stopped_early = True
-#                 break
-        
-#         trial.report(val_loss, epoch)
-    
-#     if best_checkpoint is not None:
-#         os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
-#         if stopped_early:
-#             filename = f"checkpoint_trial_{trial.number}_stopped_early.pth"
-#         else:
-#             filename = f"checkpoint_trial_{trial.number}.pth"
-#         checkpoint_filename = os.path.join(CHECKPOINTS_DIR, filename)
-#         torch.save(best_checkpoint, checkpoint_filename)
-#         print(f"Saved best checkpoint for trial {trial.number} at epoch {best_epoch} to {checkpoint_filename}")
-        
-#         # Upload the saved checkpoint using Optuna's ArtifactStore per its documentation.
-#         artifact_id = optuna.artifacts.upload_artifact(
-#             artifact_store=artifact_store,
-#             file_path=checkpoint_filename,
-#             study_or_trial=trial.study,
-#         )
-#         trial.set_user_attr("artifact_id", artifact_id)
-    
-#     return best_val_loss 
