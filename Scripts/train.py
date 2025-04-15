@@ -222,9 +222,9 @@ if __name__ == "__main__":
     print(f"  Best trial number: {best_trial.number}")
     print(f"  Validation Loss: {best_trial.value:.4f}")
     
-    candidate_filename = os.path.join(CHECKPOINTS_DIR, f"checkpoint_trial_{best_trial.number}_stopped_early.pth")
-    if not os.path.exists(candidate_filename):
-        candidate_filename = os.path.join(CHECKPOINTS_DIR, f"checkpoint_trial_{best_trial.number}.pth")
+    candidate_filename = os.path.join(CHECKPOINTS_DIR, f"checkpoint_trial_{best_trial.number}.pth")
+    # if not os.path.exists(candidate_filename):
+    #     candidate_filename = os.path.join(CHECKPOINTS_DIR, f"checkpoint_trial_{best_trial.number}.pth")
     best_model_filename = candidate_filename
     
     best_checkpoint = torch.load(best_model_filename, map_location=device)
