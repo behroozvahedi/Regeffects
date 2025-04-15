@@ -15,11 +15,18 @@ from copy import deepcopy
 # 1. TwoBranchCNN Model Class
 # ============================================================================ 
 class TwoBranchCNN(nn.Module):
+    """
+    Dual-branch 1D CNN model for regression tasks on DNA sequence representations.
+    
+    This definition applies ReLU activation only after a convolutional layer.
+    For each branch's ModuleList, the layers are added in pairs: Conv1d then BatchNorm1d 
+    (if enabled). In the forward pass, ReLU is applied immediately after a convolutional 
+    layer (i.e., for layers that are instances of nn.Conv1d), and NOT applied after the 
+    corresponding BatchNorm layers.
+    
+    Dense layers (both per-branch and after concatenation) are followed by a ReLU.
+    """
     def __init__(self, trial):
-        """
-        Build a dual-branch 1D CNN model with input shape (384, 20) per branch.
-        Uses valid padding (i.e. no padding) and kernel sizes chosen from [1,2,3,4].
-        """
         super(TwoBranchCNN, self).__init__()
         
         # --- Convolutional Layer Hyperparameters ---
@@ -44,11 +51,11 @@ class TwoBranchCNN(nn.Module):
         self.branch1_conv = nn.ModuleList()
         in_channels = 384
         for i in range(self.n_conv_layers):
-            padding = 0  # valid padding
             conv = nn.Conv1d(in_channels, self.n_filters, kernel_size=self.kernel_size,
-                             stride=1, dilation=1, padding=padding)
+                             stride=1, dilation=1, padding=0)
             self.branch1_conv.append(conv)
             if self.batch_norm:
+                # Append BatchNorm layer without following activation.
                 self.branch1_conv.append(nn.BatchNorm1d(self.n_filters))
             in_channels = self.n_filters
         
@@ -56,9 +63,8 @@ class TwoBranchCNN(nn.Module):
         self.branch2_conv = nn.ModuleList()
         in_channels = 384
         for i in range(self.n_conv_layers):
-            padding = 0
             conv = nn.Conv1d(in_channels, self.n_filters, kernel_size=self.kernel_size,
-                             stride=1, dilation=1, padding=padding)
+                             stride=1, dilation=1, padding=0)
             self.branch2_conv.append(conv)
             if self.batch_norm:
                 self.branch2_conv.append(nn.BatchNorm1d(self.n_filters))
@@ -99,19 +105,20 @@ class TwoBranchCNN(nn.Module):
         self.fc_output = nn.Linear(in_features, 1)
     
     def forward(self, x1, x2):
-        # Process Branch 1
+        # Process Branch 1.
         for layer in self.branch1_conv:
-            # Apply layer and then activation regardless of layer type.
+            # If the layer is a convolution, apply it then activation.
             if isinstance(layer, nn.Conv1d):
                 x1 = layer(x1)
                 x1 = self.activation(x1)
             else:
+                # For BatchNorm, simply apply without additional activation.
                 x1 = layer(x1)
         x1 = x1.view(x1.size(0), -1)
         for dense in self.branch1_dense:
             x1 = self.activation(dense(x1))
         
-        # Process Branch 2
+        # Process Branch 2.
         for layer in self.branch2_conv:
             if isinstance(layer, nn.Conv1d):
                 x2 = layer(x2)
@@ -122,6 +129,7 @@ class TwoBranchCNN(nn.Module):
         for dense in self.branch2_dense:
             x2 = self.activation(dense(x2))
         
+        # Concatenate and process post-dense layers.
         x = torch.cat((x1, x2), dim=1)
         for dense in self.post_dense_layers:
             x = self.activation(dense(x))
