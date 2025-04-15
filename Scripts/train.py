@@ -183,10 +183,7 @@ def objective(trial):
     
     if best_checkpoint is not None:
         os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
-        if stopped_early:
-            filename = f"checkpoint_trial_{trial.number}_stopped_early.pth"
-        else:
-            filename = f"checkpoint_trial_{trial.number}.pth"
+        filename = f"checkpoint_trial_{trial.number}.pth"
         checkpoint_filename = os.path.join(CHECKPOINTS_DIR, filename)
         torch.save(best_checkpoint, checkpoint_filename)
         print(f"Saved best checkpoint for trial {trial.number} at epoch {best_epoch} to {checkpoint_filename}")
