@@ -11,7 +11,7 @@ import plotly
 import sklearn
 from copy import deepcopy
 
-# Import shared utilities from utils.py.
+# Import shared utilities from our utils.py module.
 from utils import set_random_seeds, get_device, get_indices, DNADualDataset, TwoBranchCNN
 
 # ============================================================================
@@ -66,7 +66,6 @@ print("  Test group:", test_group)
 train_groups = np.unique(groups[train_idx])
 print("  Training groups:", train_groups)
 
-# Dynamically build the output directories.
 base_output_dir = f"/home/behrooz/WP2/Models/2BCNN/Allspecies_PCembed/val{val_group}_test{test_group}/round8_Bdi_Osa/"
 CHECKPOINTS_DIR = base_output_dir
 PLOTS_DIR = os.path.join(CHECKPOINTS_DIR, "plots")
@@ -109,7 +108,7 @@ def objective(trial):
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     
-    # Instantiate the model using TwoBranchCNN from utils.
+    # Instantiate model using TwoBranchCNN from utils.
     model = TwoBranchCNN(trial).to(device)
     
     lr = trial.suggest_float("lr", 1e-5, 1e-2, log=True)
@@ -122,7 +121,6 @@ def objective(trial):
     best_val_loss = float('inf')
     best_epoch = 0
     best_checkpoint = None
-    stopped_early = False
     
     train_loss_history = []
     val_loss_history = []
@@ -176,26 +174,30 @@ def objective(trial):
             if improvement < min_improvement:
                 print(f"Early stopping triggered at epoch {epoch+1}: Improvement over best ({best_val_loss:.4f}) is only {improvement:.4f} (< {min_improvement}) after {lookahead_epochs} epochs.")
                 trial.set_user_attr("early_stopped", True)
-                stopped_early = True
                 break
         
         trial.report(val_loss, epoch)
     
     if best_checkpoint is not None:
-        os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
+        # Save checkpoint without "_stopped_early" suffix.
         filename = f"checkpoint_trial_{trial.number}.pth"
         checkpoint_filename = os.path.join(CHECKPOINTS_DIR, filename)
         torch.save(best_checkpoint, checkpoint_filename)
         print(f"Saved best checkpoint for trial {trial.number} at epoch {best_epoch} to {checkpoint_filename}")
         
-        # Upload the saved checkpoint using Optuna's ArtifactStore.
-        artifact_store_instance = optuna.artifacts.FileSystemArtifactStore(base_path=os.path.join(CHECKPOINTS_DIR, "artifacts"))
-        artifact_id = optuna.artifacts.upload_artifact(
-            artifact_store=artifact_store_instance,
-            file_path=checkpoint_filename,
-            study_or_trial=trial.study,
-        )
-        trial.set_user_attr("artifact_id", artifact_id)
+        # -------------------------------
+        # Save TorchScript Version as .pt File
+        # -------------------------------
+        # Re-instantiate a model and load the best state.
+        model_script = TwoBranchCNN(trial).to(device)
+        model_script.load_state_dict(best_checkpoint['model_state_dict'])
+        model_script.eval()
+        # Convert model to TorchScript.
+        scripted_model = torch.jit.script(model_script)
+        pt_filename = f"checkpoint_trial_{trial.number}.pt"
+        pt_path = os.path.join(CHECKPOINTS_DIR, pt_filename)
+        torch.jit.save(scripted_model, pt_path)
+        print(f"Saved TorchScript model for trial {trial.number} as {pt_path}")
     
     return best_val_loss
 
@@ -223,8 +225,6 @@ if __name__ == "__main__":
     print(f"  Validation Loss: {best_trial.value:.4f}")
     
     candidate_filename = os.path.join(CHECKPOINTS_DIR, f"checkpoint_trial_{best_trial.number}.pth")
-    # if not os.path.exists(candidate_filename):
-    #     candidate_filename = os.path.join(CHECKPOINTS_DIR, f"checkpoint_trial_{best_trial.number}.pth")
     best_model_filename = candidate_filename
     
     best_checkpoint = torch.load(best_model_filename, map_location=device)
@@ -286,4 +286,3 @@ if __name__ == "__main__":
         print(f"Learning curve plot saved in {PLOTS_DIR}")
     else:
         print("No loss history found in the best checkpoint; cannot plot learning curve.")
-
