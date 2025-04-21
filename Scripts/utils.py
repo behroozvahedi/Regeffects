@@ -193,6 +193,48 @@ class DNADualDataset(Dataset):
                 torch.tensor(tts_sample, dtype=torch.float32),
                 torch.tensor(target, dtype=torch.float32))
     
+# Use this extended version of DNADualDataset class for generating predictions for each gene in the test set.
+class DNADualDatasetMeta(DNADualDataset):
+    """
+    Extends DNADualDataset to also return gene_name and group_id.
+    """
+    def __init__(self, indices, tss, tts, TPM, tss_mean, tss_std, tts_mean, tts_std,
+                 gene, groups):
+        super().__init__(indices, tss, tts, TPM, tss_mean, tss_std, tts_mean, tts_std)
+        self.gene   = gene
+        self.groups = groups
+
+    def __getitem__(self, idx):
+        tss_tensor, tts_tensor, target_tensor = super().__getitem__(idx)
+        real_idx = self.indices[idx]
+        gene_name = self.gene[real_idx]
+        group_id  = self.groups[real_idx]
+        return tss_tensor, tts_tensor, target_tensor, gene_name, group_id
+
+# -----------------------------------------------------------------------
+# Evaluation Utility
+# -----------------------------------------------------------------------
+def evaluate_model(model, dataloader, device, criterion):
+    """
+    Loop over dataloader, compute average loss and collect predictions.
+    Returns (avg_loss, predictions_array).
+    """
+    model.eval()
+    total_loss, total_samples = 0.0, 0
+    all_preds = []
+    with torch.no_grad():
+        for x_tss, x_tts, target, *_ in dataloader:
+            x_tss, x_tts = x_tss.to(device), x_tts.to(device)
+            target = target.to(device).unsqueeze(1)
+            output = model(x_tss, x_tts)
+            loss = criterion(output, target)
+            bs = x_tss.size(0)
+            total_loss += loss.item() * bs
+            total_samples += bs
+            all_preds.append(output.cpu().numpy())
+    avg_loss    = total_loss / total_samples
+    predictions = np.concatenate(all_preds, axis=0)
+    return avg_loss, predictions
 
 # ============================================================================ 
 # 3. helper Functions
@@ -219,3 +261,33 @@ def get_indices(val_group, test_group, groups):
     train_idx = np.where((groups != val_group) & (groups != test_group))[0]
     return train_idx, val_idx, test_idx
 
+# Function to evaluate model(s) on test sets. Returns average loss and predictions array.
+def evaluate_model(model, dataloader, device, criterion):
+    """
+    Evaluate the model on a given DataLoader.
+
+    Returns:
+      - average loss over the dataset.
+      - predictions as a numpy array.
+    """
+    model.eval()
+    total_loss = 0.0
+    total_samples = 0
+    all_predictions = []
+
+    with torch.no_grad():
+        for x_tss, x_tts, target, *rest in dataloader:
+            x_tss = x_tss.to(device)
+            x_tts = x_tts.to(device)
+            target = target.to(device).unsqueeze(1)
+            output = model(x_tss, x_tts)
+            loss = criterion(output, target)
+            batch_size = x_tss.size(0)
+            total_loss += loss.item() * batch_size
+            total_samples += batch_size
+
+            all_predictions.append(output.cpu().numpy())
+
+    avg_loss = total_loss / total_samples
+    predictions = np.concatenate(all_predictions, axis=0)
+    return avg_loss, predictions
