@@ -9,7 +9,7 @@ collects their predictions, computes an ensemble average, and saves a single CSV
   - predictions from each of the top-X models (columns: model_1, model_2, ...)
   - the ensemble (average) prediction
 
-All shared classes and functions are imported from utils.py (SPOD).
+All shared classes and functions are imported from utils.py
 """
 
 import os
