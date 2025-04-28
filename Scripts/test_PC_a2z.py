@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import os
 import argparse
 import numpy as np
@@ -53,8 +51,7 @@ args = parser.parse_args()
 # ============================================================================
 DATA_DIR = "/home/behrooz/WP2/Datasets/PC_Embeddings/npy_files/Bdi_Osa"
 base_output_dir = (
-    f"/home/behrooz/WP2/Models/2BCNN/Allspecies_PCembed/"
-    f"val{args.val_group}_test{args.test_group}/round8_Bdi_Osa/"
+    f"/home/behrooz/WP2/Models/2BCNN/Allspecies_PCembed/val{args.val_group}_test{args.test_group}/round8_Bdi_Osa/"
 )
 CHECKPOINTS_DIR = base_output_dir
 TRIALS_CSV = os.path.join(CHECKPOINTS_DIR, "trial_results.csv")
@@ -62,20 +59,15 @@ TRIALS_CSV = os.path.join(CHECKPOINTS_DIR, "trial_results.csv")
 # ============================================================================
 # 4. Load Data and Compute Indices
 # ============================================================================
-tss = np.load(os.path.join(DATA_DIR, "PCembed_Bdi_Osa_tss.npy"),
-              mmap_mode="r", allow_pickle=True)
-tts = np.load(os.path.join(DATA_DIR, "PCembed_Bdi_Osa_tts.npy"),
-              mmap_mode="r", allow_pickle=True)
-TPM = np.load(os.path.join(DATA_DIR, "PCembed_Bdi_Osa_TPM.npy"),
-              mmap_mode="r", allow_pickle=True)
-groups = np.load(os.path.join(DATA_DIR, "PCembed_Bdi_Osa_group_for_cross_validation.npy"),
-                 mmap_mode="r", allow_pickle=True)
+tss = np.load(os.path.join(DATA_DIR, "PCembed_Bdi_Osa_tss.npy"), mmap_mode="r", allow_pickle=True)
+tts = np.load(os.path.join(DATA_DIR, "PCembed_Bdi_Osa_tts.npy"), mmap_mode="r", allow_pickle=True)
+TPM = np.load(os.path.join(DATA_DIR, "PCembed_Bdi_Osa_TPM.npy"), mmap_mode="r", allow_pickle=True)
+groups = np.load(os.path.join(DATA_DIR, "PCembed_Bdi_Osa_group_for_cross_validation.npy"), mmap_mode="r", allow_pickle=True)
 
 TPM = np.log10(1 + TPM)
 
 if args.extra:
-    extra = np.load(os.path.join(DATA_DIR, "a2z_preds.npy"),
-                    mmap_mode="r", allow_pickle=True)
+    extra = np.load(os.path.join(DATA_DIR, "a2z_preds.npy"), mmap_mode="r", allow_pickle=True)
     print("Loaded extra channels:", extra.shape)
 else:
     extra = None
@@ -113,11 +105,11 @@ test_dataset = DNADualDataset(
     tss, tts, TPM,
     tss_mean, tss_std,
     tts_mean, tts_std,
-    extra=extra,
-    extra_mean=extra_mean,
-    extra_std=extra_std,
+    extra = extra,
+    extra_mean = extra_mean,
+    extra_std = extra_std,
 )
-test_loader = DataLoader(test_dataset, batch_size=256, shuffle=False)
+test_loader = DataLoader(test_dataset, batch_size = 256, shuffle = False)
 
 # ============================================================================
 # 7. Select Top-X Trials
@@ -131,8 +123,8 @@ print(top_trials[["checkpoint_file", "val_loss", "batch_size"]])
 # 8. Evaluate Each Model on the Test Set
 # ============================================================================
 all_predictions = []
-test_loss_list   = []
-criterion        = torch.nn.MSELoss()
+test_loss_list = []
+criterion = torch.nn.MSELoss()
 
 for idx, row in top_trials.iterrows():
     checkpoint_file = row["checkpoint_file"].strip()
@@ -154,8 +146,8 @@ for idx, row in top_trials.iterrows():
     }
     dummy = DummyTrial(hp)
 
-    model = TwoBranchCNN(dummy, in_channels=in_channels).to(device)
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model = TwoBranchCNN(dummy, in_channels = in_channels).to(device)
+    checkpoint = torch.load(checkpoint_path, map_location = device)
     model.load_state_dict(checkpoint["model_state_dict"])
 
     test_loss, predictions = evaluate_model(
@@ -173,7 +165,7 @@ if not all_predictions:
     print("No predictions were generated. Exiting.")
     exit(1)
 
-pred_stack    = np.stack(all_predictions, axis=0)
+pred_stack = np.stack(all_predictions, axis=0)
 ensemble_pred = pred_stack.mean(axis=0)
 
 observed = torch.tensor(TPM[test_idx], dtype=torch.float32, device=device)
