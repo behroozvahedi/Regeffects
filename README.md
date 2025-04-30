@@ -9,4 +9,8 @@ Predicting RNA expression from RNA sequence representations and regulatory featu
   * command line example for full models:
     `python train.py --val_group 1 --test_group 2 --use_extra`
 * **Part 3) Computational Tests**
+*   * command line example for base model:
+    `python test.py --val_group 1 --test_group 2 --top_x 5`
+  * command line example for full models:
+    `python test.py --val_group 1 --test_group 2 --top_x 5 --use_extra`
 * **Part 4) Experimental Tests and Validating the Predictions**  
