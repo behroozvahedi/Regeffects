@@ -14,7 +14,7 @@ import sklearn
 from copy import deepcopy
 
 # Import shared utilities from our utils.py module.
-from utils import (
+from utils_PC_a2z import (
     set_random_seeds,
     get_device,
     get_indices,
@@ -92,8 +92,13 @@ print("  Test group:      ", test_group)
 train_groups = np.unique(groups[train_idx])
 print("  Training groups: ", train_groups)
 
+# Print datasets size
+print("\nTrain set size:", len(train_idx))
+print("Validation set size:", len(val_idx))
+print("Test set size:", len(test_idx))
+
 base_output_dir = (
-    f"/home/behrooz/WP2/Models/2BCNN/Allspecies_PCembed/val{val_group}_test{test_group}/round8_Bdi_Osa/"
+    f"/home/behrooz/WP2/Models/2BCNN/Allspecies_PCembed/val{val_group}_test{test_group}/"
 )
 
 CHECKPOINTS_DIR = base_output_dir
