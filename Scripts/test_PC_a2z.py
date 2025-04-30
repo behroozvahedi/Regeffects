@@ -5,7 +5,7 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
-from utils import (
+from utils_PC_a2z import (
     set_random_seeds,
     get_device,
     get_indices,
@@ -41,17 +41,22 @@ parser.add_argument(
     help="Number of top models to evaluate"
 )
 parser.add_argument(
-    "--extra", action="store_true",
+    "--use_extra", action="store_true",
     help="Include extra channels from a2z_preds.npy"
 )
+
 args = parser.parse_args()
+val_group  = args.val_group
+test_group = args.test_group
+use_extra  = args.use_extra
+print(f"Using validation group: {val_group} and test group: {test_group}, use_extra: {use_extra}")
 
 # ============================================================================
 # 3. Define Paths and Directories
 # ============================================================================
 DATA_DIR = "/home/behrooz/WP2/Datasets/PC_Embeddings/npy_files/Bdi_Osa"
 base_output_dir = (
-    f"/home/behrooz/WP2/Models/2BCNN/Allspecies_PCembed/val{args.val_group}_test{args.test_group}/round8_Bdi_Osa/"
+    f"/home/behrooz/WP2/Models/2BCNN/Allspecies_PCembed/val{val_group}_test{test_group}/"
 )
 CHECKPOINTS_DIR = base_output_dir
 TRIALS_CSV = os.path.join(CHECKPOINTS_DIR, "trial_results.csv")
@@ -64,15 +69,31 @@ tts = np.load(os.path.join(DATA_DIR, "PCembed_Bdi_Osa_tts.npy"), mmap_mode="r", 
 TPM = np.load(os.path.join(DATA_DIR, "PCembed_Bdi_Osa_TPM.npy"), mmap_mode="r", allow_pickle=True)
 groups = np.load(os.path.join(DATA_DIR, "PCembed_Bdi_Osa_group_for_cross_validation.npy"), mmap_mode="r", allow_pickle=True)
 
+print("Loaded shapes:")
+print("tss:",    tss.shape)     # Expected: (N, 384, 20)
+print("tts:",    tts.shape)     # Expected: (N, 384, 20)
+print("TPM:",    TPM.shape)     # Expected: (N, )
+print("groups:", groups.shape)  # Expected: (N, )
+
+# Transform TPM values to log(1+TPM) in base 10.
 TPM = np.log10(1 + TPM)
 
-if args.extra:
+if use_extra:
     extra = np.load(os.path.join(DATA_DIR, "a2z_preds.npy"), mmap_mode="r", allow_pickle=True)
     print("Loaded extra channels:", extra.shape)
 else:
     extra = None
 
-train_idx, _, test_idx = get_indices(args.val_group, args.test_group, groups)
+train_idx, val_idx, test_idx = get_indices(val_group, test_group, groups)
+print("Fold split:")
+print("  Validation group:", val_group)
+print("  Test group:      ", test_group)
+train_groups = np.unique(groups[train_idx])
+print("  Training groups: ", train_groups)
+
+# Print datasets size
+print("\nTrain set size:", len(train_idx))
+print("Validation set size:", len(val_idx))
 print("Test set size:", len(test_idx))
 
 # ============================================================================
@@ -86,7 +107,7 @@ stats_path = os.path.join(
 stats = np.load(stats_path)
 tss_mean, tss_std = stats["tss_mean"], stats["tss_std"]
 tts_mean, tts_std = stats["tts_mean"], stats["tts_std"]
-if args.extra:
+if use_extra:
     extra_mean, extra_std = stats["extra_mean"], stats["extra_std"]
 else:
     extra_mean = extra_std = None
