@@ -29,7 +29,7 @@ parser = argparse.ArgumentParser(
     description="Test top-X 2BCNN models on the test set and report losses"
 )
 parser.add_argument(
-    "--data_dir", type=str, default="/home/behrooz/WP2/Datasets/PC_Embeddings/npy_files/Bdi_Osa"
+    "--data_dir", type=str, required=True
     help="Absolute path to Input data directory"
 )
 parser.add_argument(
