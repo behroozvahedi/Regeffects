@@ -6,23 +6,23 @@ Predicting RNA expression from RNA sequence representations and regulatory featu
 * **Part 2) Training and Bayesian Hyperparameter Optimization with Optuna**
   * command line for base model:
     ```
-    python train_PC_a2z.py --data_dir <input_directory> --val_group <validation group> --test_group <test group>
+    python train_PC_a2z.py --data_dir <directory> --val_group <validation group> --test_group <test group>
     ```
     `example:  python train_PC_a2z.py --data_dir "~/path_to_data" --val_group 1 --test_group 2`
     
   * command line for full models:
     ```
-    python train_PC_a2z.py --data_dir <input_directory> --val_group <validation group> --test_group <test group> --use_extra
+    python train_PC_a2z.py --data_dir <directory> --val_group <validation group> --test_group <test group> --use_extra
     ```
     `example:  python train_PC_a2z.py --data_dir "~/path_to_data" --val_group 1 --test_group 2 --use_extra`
     
 * **Part 3) Computational Tests**
   * command line example for base model:
     ```
-    python test_PC_a2z.py --data_dir <input_directory> --val_group <validation group> --test_group <test group> --top_x <number of models>
+    python test_PC_a2z.py --data_dir <directory> --val_group <validation group> --test_group <test group> --top_x <number of models>
     ```
   * command line example for full models:
     ```
-    python test_PC_a2z.py --data_dir <input_directory> --val_group <validation group> --test_group <test group> --top_x <number of models> --use_extra
+    python test_PC_a2z.py --data_dir <directory> --val_group <validation group> --test_group <test group> --top_x <number of models> --use_extra
     ```
 * **Part 4) Experimental Tests and Validating the Predictions**  
