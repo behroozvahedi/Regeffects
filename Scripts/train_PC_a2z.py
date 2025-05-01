@@ -36,6 +36,10 @@ parser = argparse.ArgumentParser(
     description="Train Dual-Branch CNN with Hyperparameter Optimization"
 )
 parser.add_argument(
+    "--data_dir", type=str,
+    help="Absolute path to Input data directory"
+)
+parser.add_argument(
     "--val_group", type=str, default="4",
     help="Validation group number (default: 4)"
 )
@@ -48,6 +52,7 @@ parser.add_argument(
     help="Include extra channels from a2z_preds.npy"
 )
 args = parser.parse_args()
+data_dir = args.data_dir
 val_group  = args.val_group
 test_group = args.test_group
 use_extra  = args.use_extra
@@ -56,7 +61,8 @@ print(f"Using validation group: {val_group} and test group: {test_group}, use_ex
 # ============================================================================
 # 3. Global directory for input data
 # ============================================================================
-DATA_DIR = "/home/behrooz/WP2/Datasets/PC_Embeddings/npy_files/Bdi_Osa"
+# DATA_DIR = "/home/behrooz/WP2/Datasets/PC_Embeddings/npy_files/Bdi_Osa"
+DATA_DIR = data_dir
 
 # ============================================================================
 # 4. Data Loading Using Memory Mapping
