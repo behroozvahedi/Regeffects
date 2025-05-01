@@ -36,7 +36,7 @@ parser = argparse.ArgumentParser(
     description="Train Dual-Branch CNN with Hyperparameter Optimization"
 )
 parser.add_argument(
-    "--data_dir", type=str,
+    "--data_dir", type=str, required=True
     help="Absolute path to Input data directory"
 )
 parser.add_argument(
@@ -166,29 +166,10 @@ val_dataset = DNADualDataset(
 def objective(trial):
     # DataLoaders for this trial
     batch_size = trial.suggest_categorical("batch_size", [64, 128, 256])
-    train_loader = torch.utils.data.DataLoader(
-        DNADualDataset(
-            train_idx,
-            tss, tts, TPM,
-            tss_mean, tss_std,
-            tts_mean, tts_std,
-            extra = extra,
-            extra_mean = extra_mean,
-            extra_std = extra_std,
-        ), 
-        batch_size = batch_size, shuffle = True)
     
-    val_loader = torch.utils.data.DataLoader(
-        DNADualDataset(
-            val_idx,
-            tss, tts, TPM,
-            tss_mean, tss_std,
-            tts_mean, tts_std,
-            extra=extra,
-            extra_mean=extra_mean,
-            extra_std=extra_std,
-        ),
-        batch_size = batch_size, shuffle = False)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size, shuffle = True)
+
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size = batch_size, shuffle = False)
 
     model = TwoBranchCNN(trial, in_channels=in_channels).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=trial.suggest_float("lr", 1e-5, 1e-2, log=True))
