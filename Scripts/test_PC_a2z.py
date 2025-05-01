@@ -29,6 +29,10 @@ parser = argparse.ArgumentParser(
     description="Test top-X 2BCNN models on the test set and report losses"
 )
 parser.add_argument(
+    "--data_dir", type=str, default="/home/behrooz/WP2/Datasets/PC_Embeddings/npy_files/Bdi_Osa"
+    help="Absolute path to Input data directory"
+)
+parser.add_argument(
     "--val_group", type=str, required=True,
     help="Validation group ID (e.g. '4')"
 )
@@ -46,6 +50,7 @@ parser.add_argument(
 )
 
 args = parser.parse_args()
+data_dir = args.data_dir
 val_group  = args.val_group
 test_group = args.test_group
 use_extra  = args.use_extra
@@ -54,7 +59,8 @@ print(f"Using validation group: {val_group} and test group: {test_group}, use_ex
 # ============================================================================
 # 3. Define Paths and Directories
 # ============================================================================
-DATA_DIR = "/home/behrooz/WP2/Datasets/PC_Embeddings/npy_files/Bdi_Osa"
+# DATA_DIR = "/home/behrooz/WP2/Datasets/PC_Embeddings/npy_files/Bdi_Osa"
+DATA_DIR = data_dir
 base_output_dir = (
     f"/home/behrooz/WP2/Models/2BCNN/Allspecies_PCembed/val{val_group}_test{test_group}/"
 )
