@@ -104,7 +104,7 @@ class DNADualDataset(Dataset):
         if self.extra_tss is not None:
             extra_tss_sample = np.array(self.extra_tss[real_idx])     # shape: (1, C_extra, P)
             extra_tss_sample = (extra_tss_sample - self.extra_tss_mean) / self.extra_tss_std
-            extra_tss_sample = np.squeeze(extra_tss_sample, axis=0))  # shape: (C_extra, P)
+            extra_tss_sample = np.squeeze(extra_tss_sample, axis=0)  # shape: (C_extra, P)
             tss_sample = np.concatenate([tss_sample, extra_tss_sample], axis=0)   # shape: (1, C + C_extra, P)
 
         if self.extra_tts is not None:
