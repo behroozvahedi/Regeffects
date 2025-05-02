@@ -105,15 +105,13 @@ class DNADualDataset(Dataset):
             extra_tss_sample = np.array(self.extra_tss[real_idx])     # shape: (1, C_extra, P)
             extra_tss_sample = (extra_tss_sample - self.extra_tss_mean) / self.extra_tss_std
             extra_tss_sample = np.squeeze(extra_tss_sample, axis=0))  # shape: (C_extra, P)
+            tss_sample = np.concatenate([tss_sample, extra_tss_sample], axis=0)   # shape: (1, C + C_extra, P)
 
         if self.extra_tts is not None:
             extra_tts_sample = np.array(self.extra_tts[real_idx])     # shape: (1, C_extra, P
             extra_tts_sample = (extra_tts_sample - self.extra_tts_mean) / self.extra_tts_std
             extra_tts_sample = np.squeeze(extra_tts_sample, axis=0)   # shape: (C_extra, P)
-
-            # Concatenate along channel dimension
-            tss_sample = np.concatenate([tss_sample, extra_tss_sample], axis=0)
-            tts_sample = np.concatenate([tts_sample, extra_tts_sample], axis=0)
+            tts_sample = np.concatenate([tts_sample, extra_tts_sample], axis=0)   # shape: (1, C + C_extra, P)
 
         # Load target
         target = self.TPM[real_idx]
