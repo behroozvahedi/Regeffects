@@ -41,41 +41,48 @@ def get_indices(val_group, test_group, groups):
 # ============================================================================
 class DNADualDataset(Dataset):
     """
-    PyTorch Dataset for dual-branch inputs (tss, tts), with optional extra channels.
+    PyTorch Dataset for dual-branch inputs (tss, tts), 
+    with optional extra channels for tss and tts, each standardized by its own mean/std.
 
     Args:
-      indices:      array of sample indices for this split.
-      tss, tts:     memmapped arrays of shape (N, C, P).
-      TPM:          array of shape (N,) of targets (log-transformed).
-      tss_mean:     array of shape (1, C, P) for standardization.
-      tss_std:      array of shape (1, C, P) for standardization.
-      tts_mean:     array of shape (1, C, P) for standardization.
-      tts_std:      array of shape (1, C, P) for standardization.
-      extra:        optional memmapped array of shape (N, C_extra, P).
-      extra_mean:   array of shape (1, C_extra, P) for standardization.
-      extra_std:    array of shape (1, C_extra, P) for standardization.
+      indices:        array of sample indices for this split.
+      tss, tts:       memmapped arrays of shape (N, C, P).
+      TPM:            array of shape (N,) of targets (log-transformed).
+      tss_mean:       array of shape (1, C, P) for standardization.
+      tss_std:        array of shape (1, C, P) for standardization.
+      tts_mean:       array of shape (1, C, P) for standardization.
+      tts_std:        array of shape (1, C, P) for standardization.
+      extra_tss:      optional memmapped array of shape (N, C_extra, P) for TSS branch.
+      extra_tss_mean: array of shape (1, C_extra, P) for standardization.
+      extra_tss_std:  array of shape (1, C_extra, P) for standardization.
+      extra_tts:      optional memmapped array of shape (N, C_extra, P) for TTS branch.
+      extra_tts_mean: array of shape (1, C_extra, P) for standardization.
+      extra_tts_std:  array of shape (1, C_extra, P) for standardization.
     """
     def __init__(
         self,
         indices,
         tss, tts, TPM,
-        tss_mean, tss_std,
-        tts_mean, tts_std,
-        extra=None,
-        extra_mean=None,
-        extra_std=None
+        tss_mean, tss_std, tts_mean, tts_std,
+        *,                           # ← enforces keyword-only for the extras
+        extra_tss=None, extra_tts=None,
+        extra_tss_mean=None, extra_tss_std=None,
+        extra_tts_mean=None, extra_tts_std=None,
     ):
-        self.indices     = indices
-        self.tss         = tss
-        self.tts         = tts
-        self.TPM         = TPM
-        self.tss_mean    = tss_mean
-        self.tss_std     = tss_std
-        self.tts_mean    = tts_mean
-        self.tts_std     = tts_std
-        self.extra       = extra
-        self.extra_mean  = extra_mean
-        self.extra_std   = extra_std
+        self.indices        = indices
+        self.tss            = tss
+        self.tts            = tts
+        self.TPM            = TPM
+        self.tss_mean       = tss_mean
+        self.tss_std        = tss_std
+        self.tts_mean       = tts_mean
+        self.tts_std        = tts_std
+        self.extra_tss      = extra_tss
+        self.extra_tts      = extra_tts
+        self.extra_tss_mean = extra_tss_mean
+        self.extra_tss_std  = extra_tss_std
+        self.extra_tts_mean = extra_tts_mean
+        self.extra_tts_std  = extra_tts_std
 
     def __len__(self):
         return len(self.indices)
@@ -84,24 +91,29 @@ class DNADualDataset(Dataset):
         real_idx   = self.indices[idx]
 
         # Load and standardize tss
-        tss_sample = np.array(self.tss[real_idx])  # shape (1, C, P)
+        tss_sample = np.array(self.tss[real_idx])      # shape (1, C, P)
         tss_sample = (tss_sample - self.tss_mean) / self.tss_std
-        tss_sample = np.squeeze(tss_sample, axis=0)  # shape (C, P)
+        tss_sample = np.squeeze(tss_sample, axis=0)    # shape (C, P)
 
         # Load and standardize tts
         tts_sample = np.array(self.tts[real_idx])
         tts_sample = (tts_sample - self.tts_mean) / self.tts_std
         tts_sample = np.squeeze(tts_sample, axis=0)
 
-        # If extra channels provided, standardize and concatenate
-        if self.extra is not None:
-            extra_sample = np.array(self.extra[real_idx])    # shape (1, C_extra, P)
-            extra_sample = (extra_sample - self.extra_mean) / self.extra_std
-            extra_sample = np.squeeze(extra_sample, axis=0)  # shape (C_extra, P)
+        # If extra channels provided, standardize and concatenate along channels axis
+        if self.extra_tss is not None:
+            extra_tss_sample = np.array(self.extra_tss[real_idx])     # shape: (1, C_extra, P)
+            extra_tss_sample = (extra_tss_sample - self.extra_tss_mean) / self.extra_tss_std
+            extra_tss_sample = np.squeeze(extra_tss_sample, axis=0))  # shape: (C_extra, P)
+
+        if self.extra_tts is not None:
+            extra_tts_sample = np.array(self.extra_tts[real_idx])     # shape: (1, C_extra, P
+            extra_tts_sample = (extra_tts_sample - self.extra_tts_mean) / self.extra_tts_std
+            extra_tts_sample = np.squeeze(extra_tts_sample, axis=0)   # shape: (C_extra, P)
 
             # Concatenate along channel dimension
-            tss_sample = np.concatenate([tss_sample, extra_sample], axis=0)
-            tts_sample = np.concatenate([tts_sample, extra_sample], axis=0)
+            tss_sample = np.concatenate([tss_sample, extra_tss_sample], axis=0)
+            tts_sample = np.concatenate([tts_sample, extra_tts_sample], axis=0)
 
         # Load target
         target = self.TPM[real_idx]
@@ -119,7 +131,7 @@ class TwoBranchCNN(nn.Module):
     """
     Dual-branch 1D CNN with configurable input channels and hyperparameters from an Optuna trial.
     """
-    def __init__(self, trial, in_channels: int = 384):
+    def __init__(self, trial, in_channels: int):
         super().__init__()
 
         # --- Hyperparameters from trial ---
