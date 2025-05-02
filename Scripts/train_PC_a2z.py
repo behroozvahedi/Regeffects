@@ -83,10 +83,13 @@ TPM = np.log10(1 + TPM)
 
 # Optionally load extra channels (a2z_preds or a2z_embeddings)
 if use_extra:
-    extra = np.load(os.path.join(DATA_DIR, "a2z_preds.npy"), mmap_mode='r', allow_pickle=True)
-    print("Loaded extra channels:", extra.shape)
+    extra_tss = np.load(os.path.join(DATA_DIR, "a2z_tss_preds.npy"), mmap_mode='r', allow_pickle=True)  # Expected: (N, 1, 20)
+    extra_tts = np.load(os.path.join(DATA_DIR, "a2z_tts_preds.npy"), mmap_mode='r', allow_pickle=True)  # Expected: (N, 1, 20)
+    print("Loaded extra tss channels:", extra_tss.shape)
+    print("Loaded extra tts channels:", extra_tts.shape)
 else:
-    extra = None
+    extra_tss = None
+    extra_tts = None
 
 # ============================================================================
 # 5. Cross-Validation Splitting and Output Directories
@@ -126,17 +129,19 @@ tss_std  = stats['tss_std']
 tts_mean = stats['tts_mean']
 tts_std  = stats['tts_std']
 if use_extra:
-    extra_mean = stats['extra_mean']
-    extra_std  = stats['extra_std']
+    extra_tss_mean = stats['extra_tss_mean']
+    extra_tss_std  = stats['extra_tss_std']
+    extra_tts_mean = stats['extra_tts_mean']
+    extra_tts_std  = stats['extra_tts_std']
 else:
-    extra_mean = extra_std = None
+    extra_tss_mean = extra_tss_std = extra_tts_mean = extra_tts_std = None
 stats.close()
 print("Loaded global stats from", global_stats_file)
 
 # Determine in_channels for the model
-base_channels  = tss_mean.shape[1]            # 384
-extra_channels = extra.shape[1] if use_extra else 0
-in_channels    = base_channels + extra_channels
+base_channels  = tss_mean.shape[1]                  # Expected: 384
+extra_channels = extra_tss.shape[1] if use_extra else 0
+in_channels    = base_channels + extra_channels     # Expected: 384 + extra_channles
 
 # # BEGIN SANITY CHECK (per‐channel, per‐position mean/std of standardized tss/tts)
 # # (Remove this block when done with the check)
@@ -159,23 +164,32 @@ in_channels    = base_channels + extra_channels
 # ============================================================================
 # 7. Create Dataset Instances
 # ============================================================================
+# Creating Training Dataset
 train_dataset = DNADualDataset(
     train_idx,
     tss, tts, TPM,
     tss_mean, tss_std,
     tts_mean, tts_std,
-    extra = extra,
-    extra_mean = extra_mean,
-    extra_std = extra_std,
+    extra_tss      = extra_tss,
+    extra_tss_mean = extra_tss_mean,
+    extra_tss_std  = extra_tss_std,
+    extra_tts      = extra_tts,
+    extra_tts_mean = extra_tts_mean,
+    extra_tts_std  = extra_tts_std,
 )
+
+# Creating Validation Dataset
 val_dataset = DNADualDataset(
     val_idx,
     tss, tts, TPM,
     tss_mean, tss_std,
     tts_mean, tts_std,
-    extra = extra,
-    extra_mean = extra_mean,
-    extra_std = extra_std,
+    extra_tss      = extra_tss,
+    extra_tss_mean = extra_tss_mean,
+    extra_tss_std  = extra_tss_std,
+    extra_tts      = extra_tts,
+    extra_tts_mean = extra_tts_mean,
+    extra_tts_std  = extra_tts_std,
 )
 
 # ============================================================================
