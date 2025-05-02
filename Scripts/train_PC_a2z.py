@@ -36,7 +36,7 @@ parser = argparse.ArgumentParser(
     description="Train Dual-Branch CNN with Hyperparameter Optimization"
 )
 parser.add_argument(
-    "--data_dir", type=str, required=True
+    "--data_dir", type=str, required=True,
     help="Absolute path to Input data directory"
 )
 parser.add_argument(
