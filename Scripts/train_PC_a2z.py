@@ -286,13 +286,13 @@ if __name__ == "__main__":
 
     sampler = optuna.samplers.TPESampler(seed=42)
     study = optuna.create_study(
-        study_name=f"PCembed_val{val_group}_test{test_group}_round8_Bdi_Osa",
+        study_name=f"val{val_group}_test{test_group}",
         storage=storage_url,
         sampler=sampler,
         direction="minimize",
         load_if_exists=True
     )
-    study.optimize(objective, n_trials=50)
+    study.optimize(objective, n_trials=200)
 
     print("\nBest trial:")
     best_trial = study.best_trial
