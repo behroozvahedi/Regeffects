@@ -280,10 +280,6 @@ def objective(trial):
         if (epoch + 1 - best_epoch) >= lookahead_epochs:
             improvement = best_val_loss - val_loss
             if improvement < min_improvement:
-                # print(
-                #     f"Early stopping at epoch {epoch+1}: "
-                #     f"improvement {improvement:.4f} < {min_improvement}"
-                # )
                 print(f"Early stopping triggered at epoch {epoch+1}: Improvement over best ({best_val_loss:.4f}) is only {improvement:.4f} (< {min_improvement}) after {lookahead_epochs} epochs.")
                 trial.set_user_attr("early_stopped", True)
                 break
