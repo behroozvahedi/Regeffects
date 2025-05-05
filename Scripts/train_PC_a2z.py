@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 import optuna
 import optuna.visualization as vis
 import matplotlib.pyplot as plt
@@ -40,6 +40,10 @@ parser.add_argument(
     help="Absolute path to Input data directory"
 )
 parser.add_argument(
+    "--out_dir", type=str, required=True,
+    help="Base output directory under which run specific subdirs will be made"
+)
+parser.add_argument(
     "--val_group", type=str, default="4",
     help="Validation group number (default: 4)"
 )
@@ -51,26 +55,29 @@ parser.add_argument(
     "--use_extra", action="store_true",
     help="Include extra channels from a2z_preds.npy"
 )
+
 args = parser.parse_args()
 data_dir = args.data_dir
+out_dir = args.out_dir
 val_group  = args.val_group
 test_group = args.test_group
 use_extra  = args.use_extra
-print(f"Using validation group: {val_group} and test group: {test_group}, use_extra: {use_extra}")
+print(f"Reading input data from: {data_dir}")
+print(f"\nUsing validation group: {val_group} and test group: {test_group}, use_extra: {use_extra}")
 
 # ============================================================================
 # 3. Global directory for input data
 # ============================================================================
-# DATA_DIR = "/home/behrooz/WP2/Datasets/PC_Embeddings/npy_files/Bdi_Osa"
+# Directory where input data files and standardization statistics files are stored.
 DATA_DIR = data_dir
 
 # ============================================================================
 # 4. Data Loading Using Memory Mapping
 # ============================================================================
-tss = np.load(os.path.join(DATA_DIR, "PCembed_Bdi_Osa_tss.npy"), mmap_mode='r', allow_pickle=True)
-tts = np.load(os.path.join(DATA_DIR, "PCembed_Bdi_Osa_tts.npy"), mmap_mode='r', allow_pickle=True)
-TPM = np.load(os.path.join(DATA_DIR, "PCembed_Bdi_Osa_TPM.npy"), mmap_mode='r', allow_pickle=True)
-groups = np.load(os.path.join(DATA_DIR,"PCembed_Bdi_Osa_group_for_cross_validation.npy"), mmap_mode='r', allow_pickle=True)
+tss = np.load(os.path.join(DATA_DIR, "tss.npy"), mmap_mode = 'r', allow_pickle = True)
+tts = np.load(os.path.join(DATA_DIR, "tts.npy"), mmap_mode = 'r', allow_pickle = True)
+TPM = np.load(os.path.join(DATA_DIR, "TPM.npy"), mmap_mode = 'r', allow_pickle = True)
+groups = np.load(os.path.join(DATA_DIR,"group_for_cross_validation.npy"), mmap_mode = 'r', allow_pickle = True)
 
 print("Loaded shapes:")
 print("tss:",    tss.shape)     # Expected: (N, 384, 20)
@@ -83,8 +90,12 @@ TPM = np.log10(1 + TPM)
 
 # Optionally load extra channels (a2z_preds or a2z_embeddings)
 if use_extra:
-    extra_tss = np.load(os.path.join(DATA_DIR, "a2z_tss_preds.npy"), mmap_mode='r', allow_pickle=True)  # Expected: (N, 1, 20)
-    extra_tts = np.load(os.path.join(DATA_DIR, "a2z_tts_preds.npy"), mmap_mode='r', allow_pickle=True)  # Expected: (N, 1, 20)
+    extra_tss = np.load(os.path.join(DATA_DIR, "a2z_tss_preds.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1, 20)
+    extra_tts = np.load(os.path.join(DATA_DIR, "a2z_tts_preds.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1, 20)
+
+    # extra_tss = np.load(os.path.join(DATA_DIR, "a2z_tss_embeds.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 925, 20)
+    # extra_tts = np.load(os.path.join(DATA_DIR, "a2z_tts_embeds.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1925, 20)
+
     print("Loaded extra tss channels:", extra_tss.shape)
     print("Loaded extra tts channels:", extra_tts.shape)
 else:
@@ -106,13 +117,18 @@ print("\nTrain set size:", len(train_idx))
 print("Validation set size:", len(val_idx))
 print("Test set size:", len(test_idx))
 
-base_output_dir = (
-    f"/home/behrooz/WP2/Models/2BCNN/Allspecies_PCembed/val{val_group}_test{test_group}/"
+# Building run‐specific directories under out_dir by joining out_dir + validation and test group numbers + base/full models
+run_dir = os.path.join(
+    out_dir,
+    f"val{val_group}_test{test_group}",
+    "full_models" if use_extra else "base_models",
 )
 
-CHECKPOINTS_DIR = base_output_dir
-PLOTS_DIR = os.path.join(CHECKPOINTS_DIR, "plots")
-storage_url = f"sqlite:////{base_output_dir}optuna_study_history.db"
+os.makedirs(run_dir, exist_ok=True)
+
+CHECKPOINTS_DIR = run_dir
+PLOTS_DIR = os.path.join(run_dir, "plots")
+storage_url = f"sqlite:////{run_dir}/optuna_study_history.db"
 
 os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
 os.makedirs(PLOTS_DIR, exist_ok=True)
@@ -139,9 +155,9 @@ stats.close()
 print("Loaded global stats from", global_stats_file)
 
 # Determine in_channels for the model
-base_channels  = tss_mean.shape[1]                  # Expected: 384
+base_channels = tss_mean.shape[1]   # Expected: 384
 extra_channels = extra_tss.shape[1] if use_extra else 0
-in_channels    = base_channels + extra_channels     # Expected: 384 + extra_channles
+in_channels = base_channels + extra_channels     # Expected: 384 + extra_channles
 
 # # BEGIN SANITY CHECK (per‐channel, per‐position mean/std of standardized tss/tts)
 # # (Remove this block when done with the check)
@@ -199,12 +215,12 @@ def objective(trial):
     # DataLoaders for this trial
     batch_size = trial.suggest_categorical("batch_size", [64, 128, 256])
     
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size = batch_size, shuffle = True)
+    train_loader = DataLoader(train_dataset, batch_size = batch_size, shuffle = True)
 
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size = batch_size, shuffle = False)
+    val_loader = DataLoader(val_dataset, batch_size = batch_size, shuffle = False)
 
     model = TwoBranchCNN(trial, in_channels=in_channels).to(device)
-    optimizer = optim.AdamW(model.parameters(), lr=trial.suggest_float("lr", 1e-5, 1e-2, log=True))
+    optimizer = optim.AdamW(model.parameters(), lr=trial.suggest_float("lr", 1e-5, 1e-2, log = True))
     criterion = nn.MSELoss()
     max_epochs = 50
     lookahead_epochs = 10
@@ -300,7 +316,7 @@ if __name__ == "__main__":
 
     sampler = optuna.samplers.TPESampler(seed=42)
     study = optuna.create_study(
-        study_name=f"val{val_group}_test{test_group}",
+        study_name=f"val{val_group}_test{test_group}_{'full' if use_extra else 'base'}",
         storage=storage_url,
         sampler=sampler,
         direction="minimize",
