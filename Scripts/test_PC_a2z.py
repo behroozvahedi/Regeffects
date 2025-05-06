@@ -172,8 +172,23 @@ test_dataset = DNADualDataset(
     extra_tts_mean = extra_tts_mean,
     extra_tts_std = extra_tts_std,
 )
+
 test_loader = DataLoader(test_dataset, batch_size = 256, shuffle = False)
 
+val_dataset = DNADualDataset(
+    val_idx,
+    tss, tts, TPM,
+    tss_mean, tss_std,
+    tts_mean, tts_std,
+    extra_tss = extra_tss,
+    extra_tss_mean = extra_tss_mean,
+    extra_tss_std = extra_tss_std,
+    extra_tts = extra_tts,
+    extra_tts_mean = extra_tts_mean,
+    extra_tts_std = extra_tts_std,
+)
+
+val_loader = DataLoader(val_dataset, batch_size = 256, shuffle = False)
 # ============================================================================
 # 8. Select Top-X Trials
 # ============================================================================
@@ -214,6 +229,12 @@ for idx, row in top_trials.iterrows():
     model = TwoBranchCNN(dummy, in_channels=in_channels).to(device)
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint["model_state_dict"])
+
+    # Evaluate on validation set to replicate val loss
+    val_loss, predictions = evaluate_model(
+        model, val_loader, device, criterion
+    )
+    print(f"Model {idx+1} replicated val loss: {val_loss:.6f}")
 
     # Evaluate on test set
     test_loss, predictions = evaluate_model(
