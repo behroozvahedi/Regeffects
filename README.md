@@ -21,8 +21,10 @@ Predicting RNA expression from RNA sequence representations and regulatory featu
     ```
     python test_PC_a2z.py --data_dir <input dir> --out_dir <output dir> --val_group <group> --test_group <group> --top_x <number>
     ```
+    `example:  python test_PC_a2z.py --data_dir "~/input_data" "~/output_dir"  --val_group 1 --test_group 2 --top_x 5`
   * command line for full models:
     ```
     python test_PC_a2z.py --data_dir <input dir> --out_dir <output dir> --val_group <group> --test_group <group> --top_x <number> --use_extra
     ```
+    `example:  python test_PC_a2z.py --data_dir "~/input_data" "~/output_dir"  --val_group 1 --test_group 2 --top_x 5 --use_extra`
 * **Part 4) Experimental Tests and Validating the Predictions**  
