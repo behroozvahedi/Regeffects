@@ -2,10 +2,21 @@ import os
 import glob
 import torch
 import pandas as pd
+import argparse
+
+parser = argparse.ArgumentParser(
+    description="Creating a data frame containing 2BCNN models info"
+)
+parser.add_argument(
+    "--model_dir", type=str, required=True,
+    help="Absolute path to the directory where models are stored."
+)
+
+args = parser.parse_args()
+model_dir = args.model_dir
 
 # Directory where the checkpoint files are saved.
-# Adjust this path as needed.
-CHECKPOINTS_DIR = "/path_to_checkpoints_directory"
+CHECKPOINTS_DIR = model_dir
 
 # Use glob to get all checkpoint files matching the pattern.
 # trial checkpoints are named like "checkpoint_trial_*.pth"
