@@ -344,7 +344,7 @@ if __name__ == "__main__":
 
     sampler = optuna.samplers.TPESampler(seed=42)
     study = optuna.create_study(
-        study_name=f"val{val_group}_test{test_group}_{'full' if use_extra else 'base'}",
+        study_name=f"val{val_group}_test{test_group}_{extra if extra != "none" else 'base'}",
         storage=storage_url,
         sampler=sampler,
         direction="minimize",
