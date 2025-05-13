@@ -49,8 +49,8 @@ parser.add_argument(
     help="Number of top models to evaluate"
 )
 parser.add_argument(
-    "--use_extra", action="store_true",
-    help="Include extra channels from a2z_tss_preds.npy & a2z_tts_preds.npy"
+    "--use_extra", choices=["none","pred","emb"], default="none",
+    help="Which extra channels to include: none, predictions or embeddings"
 )
 args = parser.parse_args()
 
@@ -59,9 +59,9 @@ out_dir = args.out_dir
 val_group = args.val_group
 test_group = args.test_group
 top_x = args.top_x
-use_extra = args.use_extra
+extra = args.use_extra
 print(f"Reading input data from: {data_dir}")
-print(f"\nUsing validation group: {val_group}, test group: {test_group}, use_extra: {use_extra}")
+print(f"\nUsing validation group: {val_group}, test group: {test_group}, use_extra: {extra}")
 
 # ============================================================================
 # 3. Define Paths and Directories
@@ -86,18 +86,21 @@ print("groups:", groups.shape)
 # Log-transform targets
 TPM = np.log10(1 + TPM)
 
-if use_extra:
-    extra_tss = np.load(os.path.join(data_dir, "a2z_tss_preds.npy"), mmap_mode = "r", allow_pickle = True)
-    extra_tts = np.load(os.path.join(data_dir, "a2z_tts_preds.npy"), mmap_mode = "r", allow_pickle = True)
+# Optionally load extra channels (a2z_preds or a2z_embeddings)
+if extra != "none":
+    if extra == "pred":
+        extra_tss = np.load(os.path.join(DATA_DIR, "tss_predictions.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1, 20)
+        extra_tts = np.load(os.path.join(DATA_DIR, "tts_predictions.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1, 20)
+        
+    else:  # extra == "emb"
+        extra_tss = np.load(os.path.join(DATA_DIR, "tss_embeddings.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 925, 20)
+        extra_tts = np.load(os.path.join(DATA_DIR, "tts_embeddings.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1925, 20)
+        
+    print("Loaded extra tss channels:", extra_tss.shape)
+    print("Loaded extra tts channels:", extra_tts.shape)
 
-    # extra_tss = np.load(os.path.join(data_dir, "a2z_tss_embeds.npy"), mmap_mode = "r", allow_pickle = True)
-    # extra_tts = np.load(os.path.join(data_dir, "a2z_tts_embeds.npy"), mmap_mode = "r", allow_pickle = True)
-
-    print("Loaded extra TSS channels:", extra_tss.shape)
-    print("Loaded extra TTS channels:", extra_tts.shape)
 else:
-    extra_tss = None
-    extra_tts = None
+    extra_tss = extra_tts = None
 
 # ============================================================================
 # 5. Cross-Validation Splitting and Output Directories
@@ -118,7 +121,7 @@ print("Test set size:", len(test_idx))
 run_dir = os.path.join(
     out_dir,
     f"val{val_group}_test{test_group}",
-    "full_models" if use_extra else "base_models",
+    "base_models" if extra=="none" else f"full_models_{extra}",
 )
 
 os.makedirs(run_dir, exist_ok=True)
@@ -141,20 +144,29 @@ tss_mean = stats['tss_mean']
 tss_std  = stats['tss_std']
 tts_mean = stats['tts_mean']
 tts_std  = stats['tts_std']
-if use_extra:
-    extra_tss_mean = stats['extra_tss_mean']
-    extra_tss_std  = stats['extra_tss_std']
-    extra_tts_mean = stats['extra_tts_mean']
-    extra_tts_std  = stats['extra_tts_std']
+
+if extra == "pred":
+    # loading mean and std of a2z predictions from stats file
+    extra_tss_mean = stats['tss_pred_mean']
+    extra_tss_std  = stats['tss_pred_std']
+    extra_tts_mean = stats['tts_pred_mean']
+    extra_tts_std  = stats['tts_pred_std']
+
+elif extra == "emb":
+    # loading mean and std of a2z embeddings from stats file
+    extra_tss_mean = stats['tss_emb_mean']
+    extra_tss_std  = stats['tss_emb_std']
+    extra_tts_mean = stats['tts_emb_mean']
+    extra_tts_std  = stats['tts_emb_std']
+
 else:
-    extra_tss_mean = extra_tss_std = None
-    extra_tts_mean = extra_tts_std = None
+    extra_tss_mean = extra_tss_std = extra_tts_mean = extra_tts_std = None
 stats.close()
 print("Loaded global stats from", global_stats_file)
 
 # Determine model input channels
 base_channels = tss_mean.shape[1]  # Expected: 384
-extra_channels = extra_tss.shape[1] if use_extra else 0
+extra_channels = extra_tss.shape[1] if extra != "none" else 0
 in_channels = base_channels + extra_channels  # Expected: 384 + extra_channels
 
 # ============================================================================
