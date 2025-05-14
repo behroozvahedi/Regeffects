@@ -170,44 +170,44 @@ base_channels = tss_mean.shape[1]   # Expected: 384
 extra_channels = extra_tss.shape[1] if extra != "none" else 0
 in_channels = base_channels + extra_channels     # Expected: 384 + extra_channles
 
-# BEGIN SANITY CHECK (per‐channel, per‐position mean/std of standardized tss/tts)
-# (Remove this block when done with the check)
-tss_train = (tss[train_idx] - tss_mean) / tss_std
-tts_train = (tts[train_idx] - tts_mean) / tts_std
-tss_mean_chk = np.mean(tss_train, axis=0)
-tss_std_chk  = np.std( tss_train, axis=0)
-tts_mean_chk = np.mean(tts_train, axis=0)
-tts_std_chk  = np.std( tts_train, axis=0)
+# # BEGIN SANITY CHECK (per‐channel, per‐position mean/std of standardized tss/tts)
+# # (Remove this block when done with the check)
+# tss_train = (tss[train_idx] - tss_mean) / tss_std
+# tts_train = (tts[train_idx] - tts_mean) / tts_std
+# tss_mean_chk = np.mean(tss_train, axis=0)
+# tss_std_chk  = np.std( tss_train, axis=0)
+# tts_mean_chk = np.mean(tts_train, axis=0)
+# tts_std_chk  = np.std( tts_train, axis=0)
 
-if extra != "none":
-    # loading mean and std of a2z predictions from stats file
-    extra_tss_train = (extra_tss[train_idx] - extra_tss_mean) / extra_tss_std
-    extra_tts_train = (extra_tts[train_idx] - extra_tts_mean) / extra_tts_std
-    extra_tss_mean_chk = np.mean(extra_tss_train, axis=0)
-    extra_tss_std_chk  = np.std( extra_tss_train, axis=0)
-    extra_tts_mean_chk = np.mean(extra_tts_train, axis=0)
-    extra_tts_std_chk  = np.std( extra_tts_train, axis=0)
+# if extra != "none":
+#     # loading mean and std of a2z predictions from stats file
+#     extra_tss_train = (extra_tss[train_idx] - extra_tss_mean) / extra_tss_std
+#     extra_tts_train = (extra_tts[train_idx] - extra_tts_mean) / extra_tts_std
+#     extra_tss_mean_chk = np.mean(extra_tss_train, axis=0)
+#     extra_tss_std_chk  = np.std( extra_tss_train, axis=0)
+#     extra_tts_mean_chk = np.mean(extra_tts_train, axis=0)
+#     extra_tts_std_chk  = np.std( extra_tts_train, axis=0)
 
-print("Sanity check — standardized TSS mean shape:", tss_mean_chk.shape)
-print(tss_mean_chk)
-print("Sanity check — standardized TSS std shape:", tss_std_chk.shape)
-print(tss_std_chk)
-print("Sanity check — standardized TTS mean shape:", tts_mean_chk.shape)
-print(tts_mean_chk)
-print("Sanity check — standardized TTS std shape:", tts_std_chk.shape)
-print(tts_std_chk)
+# print("Sanity check — standardized TSS mean shape:", tss_mean_chk.shape)
+# print(tss_mean_chk)
+# print("Sanity check — standardized TSS std shape:", tss_std_chk.shape)
+# print(tss_std_chk)
+# print("Sanity check — standardized TTS mean shape:", tts_mean_chk.shape)
+# print(tts_mean_chk)
+# print("Sanity check — standardized TTS std shape:", tts_std_chk.shape)
+# print(tts_std_chk)
 
-if extra != "none":
-    print(f"\nThe extra channel(s) data used is a2z {extra}\n")
-    print("Sanity check — a2z {extra} standardized TSS mean shape:", extra_tss_mean_chk.shape)
-    print(extra_tss_mean_chk)
-    print("Sanity check — a2z {extra} standardized TSS std shape:", extra_tss_std_chk.shape)
-    print(extra_tss_std_chk)
-    print("Sanity check — a2z {extra} standardized TTS mean shape:", extra_tts_mean_chk.shape)
-    print(extra_tts_mean_chk)
-    print("Sanity check — a2z {extra} standardized TTS std shape:", extra_tts_std_chk.shape)
-    print(extra_tts_std_chk)
-# END SANITY CHECK
+# if extra != "none":
+#     print(f"\nThe extra channel(s) data used is a2z {extra}\n")
+#     print(f"Sanity check — a2z {extra} standardized TSS mean shape:", extra_tss_mean_chk.shape)
+#     print(extra_tss_mean_chk)
+#     print(f"Sanity check — a2z {extra} standardized TSS std shape:", extra_tss_std_chk.shape)
+#     print(extra_tss_std_chk)
+#     print(f"Sanity check — a2z {extra} standardized TTS mean shape:", extra_tts_mean_chk.shape)
+#     print(extra_tts_mean_chk)
+#     print(f"Sanity check — a2z {extra} standardized TTS std shape:", extra_tts_std_chk.shape)
+#     print(extra_tts_std_chk)
+# # END SANITY CHECK
 
 # ============================================================================
 # 7. Create Dataset Instances
