@@ -56,8 +56,8 @@ def main():
     # ------------------------------------------------------------------------
     # 3. Load raw arrays (mmap) & groups & gene/family names
     # ------------------------------------------------------------------------
-    tss = np.load(os.path.join(DATA_DIR, "tss.npy"), mmap_mode="r", allow_pickle=True)
-    tts = np.load(os.path.join(DATA_DIR, "tts.npy"), mmap_mode="r", allow_pickle=True)
+    tss = np.load(os.path.join(DATA_DIR, "tss_embeddings_PlantCad.npy"), mmap_mode="r", allow_pickle=True)
+    tts = np.load(os.path.join(DATA_DIR, "tts_embeddings_PlantCad.npy"), mmap_mode="r", allow_pickle=True)
     TPM = np.load(os.path.join(DATA_DIR, "TPM.npy"), mmap_mode="r", allow_pickle=True)
     groups = np.load(os.path.join(DATA_DIR, "group_for_cross_validation.npy"), mmap_mode="r", allow_pickle=True)
 
@@ -69,11 +69,11 @@ def main():
 
     if EXTRA != "none":
         if EXTRA == "pred":
-            extra_tss = np.load(os.path.join(DATA_DIR, "tss_predictions.npy"), mmap_mode="r", allow_pickle=True)
-            extra_tts = np.load(os.path.join(DATA_DIR, "tts_predictions.npy"), mmap_mode="r", allow_pickle=True)
+            extra_tss = np.load(os.path.join(DATA_DIR, "tss_predictions_a2z.npy"), mmap_mode="r", allow_pickle=True)
+            extra_tts = np.load(os.path.join(DATA_DIR, "tts_predictions_a2z.npy"), mmap_mode="r", allow_pickle=True)
         else:  # emb
-            extra_tss = np.load(os.path.join(DATA_DIR, "tss_embeddings.npy"), mmap_mode="r", allow_pickle=True)
-            extra_tts = np.load(os.path.join(DATA_DIR, "tts_embeddings.npy"), mmap_mode="r", allow_pickle=True)
+            extra_tss = np.load(os.path.join(DATA_DIR, "tss_embeddings_a2z.npy"), mmap_mode="r", allow_pickle=True)
+            extra_tts = np.load(os.path.join(DATA_DIR, "tts_embeddings_a2z.npy"), mmap_mode="r", allow_pickle=True)
     else:
         extra_tss = extra_tts = None
 
