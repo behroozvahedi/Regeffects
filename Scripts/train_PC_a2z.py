@@ -33,7 +33,7 @@ print("device:", device)
 # 2. Parse Command-Line Arguments with argparse
 # ============================================================================
 parser = argparse.ArgumentParser(
-    description="Train Dual-Branch CNN with Hyperparameter Optimization"
+    description="Train EMPRES models with Hyperparameter Optimization"
 )
 parser.add_argument(
     "--data_dir", type=str, required=True,
@@ -74,8 +74,8 @@ DATA_DIR = data_dir
 # ============================================================================
 # 4. Data Loading Using Memory Mapping
 # ============================================================================
-tss = np.load(os.path.join(DATA_DIR, "tss.npy"), mmap_mode = 'r', allow_pickle = True)
-tts = np.load(os.path.join(DATA_DIR, "tts.npy"), mmap_mode = 'r', allow_pickle = True)
+tss = np.load(os.path.join(DATA_DIR, "tss_embeddings_PlantCad.npy"), mmap_mode = 'r', allow_pickle = True)
+tts = np.load(os.path.join(DATA_DIR, "tts_embeddings_PlantCad.npy"), mmap_mode = 'r', allow_pickle = True)
 TPM = np.load(os.path.join(DATA_DIR, "TPM.npy"), mmap_mode = 'r', allow_pickle = True)
 groups = np.load(os.path.join(DATA_DIR,"group_for_cross_validation.npy"), mmap_mode = 'r', allow_pickle = True)
 
@@ -91,12 +91,12 @@ TPM = np.log10(1 + TPM)
 # Optionally load extra channels (a2z_preds or a2z_embeddings)
 if extra != "none":
     if extra == "pred":
-        extra_tss = np.load(os.path.join(DATA_DIR, "tss_predictions.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1, 20)
-        extra_tts = np.load(os.path.join(DATA_DIR, "tts_predictions.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1, 20)
+        extra_tss = np.load(os.path.join(DATA_DIR, "tss_predictions_a2z.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1, 20)
+        extra_tts = np.load(os.path.join(DATA_DIR, "tts_predictions_a2z.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1, 20)
         
     else:  # extra == "emb"
-        extra_tss = np.load(os.path.join(DATA_DIR, "tss_embeddings.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 925, 20)
-        extra_tts = np.load(os.path.join(DATA_DIR, "tts_embeddings.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1925, 20)
+        extra_tss = np.load(os.path.join(DATA_DIR, "tss_embeddings_a2z.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 925, 20)
+        extra_tts = np.load(os.path.join(DATA_DIR, "tts_embeddings_a2z.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1925, 20)
         
     print("Loaded extra tss channels:", extra_tss.shape)
     print("Loaded extra tts channels:", extra_tts.shape)
