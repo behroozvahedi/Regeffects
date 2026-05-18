@@ -11,8 +11,10 @@ from utils_PC_a2z import (
     get_indices,
     DNADualDataset,
     TwoBranchCNN,
+    TwoBranchCNN_OHE,
     DummyTrial,
     evaluate_model,
+    EMPRES_CONFIG,
 )
 
 # ============================================================================
@@ -49,8 +51,8 @@ parser.add_argument(
     help="Number of top models to evaluate"
 )
 parser.add_argument(
-    "--use_extra", choices=["none","pred","emb"], default="none",
-    help="Which extra channels to include: none, predictions or embeddings"
+    "--EMPRES_type", type=int, required=True, choices=[0, 1, 2, 3, 4],
+    help="EMPRES model type to test (0=OHE, 1=PC, 2=PC+a2z_pred, 3=PC+a2z_emb, 4=a2z_emb)"
 )
 args = parser.parse_args()
 
@@ -59,9 +61,10 @@ out_dir = args.out_dir
 val_group = args.val_group
 test_group = args.test_group
 top_x = args.top_x
-extra = args.use_extra
+EMPRES_type = args.EMPRES_type
+cfg = EMPRES_CONFIG[EMPRES_type]
 print(f"Reading input data from: {data_dir}")
-print(f"\nUsing validation group: {val_group}, test group: {test_group}, use_extra: {extra}")
+print(f"\nUsing validation group: {val_group}, test group: {test_group}, EMPRES_type: {EMPRES_type}")
 
 # ============================================================================
 # 3. Define Paths and Directories
@@ -72,8 +75,8 @@ DATA_DIR = data_dir
 # ============================================================================
 # 4. Load Data and Compute Indices
 # ============================================================================
-tss = np.load(os.path.join(DATA_DIR, "tss_embeddings_PlantCad.npy"), mmap_mode = "r", allow_pickle = True)
-tts = np.load(os.path.join(DATA_DIR, "tts_embeddings_PlantCad.npy"), mmap_mode = "r", allow_pickle = True)
+tss = np.load(os.path.join(DATA_DIR, cfg["base_tss_file"]), mmap_mode = "r", allow_pickle = True)
+tts = np.load(os.path.join(DATA_DIR, cfg["base_tts_file"]), mmap_mode = "r", allow_pickle = True)
 TPM = np.load(os.path.join(DATA_DIR, "TPM.npy"), mmap_mode = "r", allow_pickle = True)
 groups = np.load(os.path.join(DATA_DIR, "group_for_cross_validation.npy"), mmap_mode = "r", allow_pickle = True)
 
@@ -87,15 +90,9 @@ print("groups:", groups.shape)
 TPM = np.log10(1 + TPM)
 
 # Optionally load extra channels (a2z_preds or a2z_embeddings)
-if extra != "none":
-    if extra == "pred":
-        extra_tss = np.load(os.path.join(DATA_DIR, "tss_predictions_a2z.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1, 20)
-        extra_tts = np.load(os.path.join(DATA_DIR, "tts_predictions_a2z.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1, 20)
-        
-    else:  # extra == "emb"
-        extra_tss = np.load(os.path.join(DATA_DIR, "tss_embeddings_a2z.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 925, 20)
-        extra_tts = np.load(os.path.join(DATA_DIR, "tts_embeddings_a2z.npy"), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1925, 20)
-        
+if cfg["extra_tss_file"] is not None:
+    extra_tss = np.load(os.path.join(DATA_DIR, cfg["extra_tss_file"]), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1, 20) for pred, (N, 925, 20) for emb
+    extra_tts = np.load(os.path.join(DATA_DIR, cfg["extra_tts_file"]), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1, 20) for pred, (N, 925, 20) for emb
     print("Loaded extra tss channels:", extra_tss.shape)
     print("Loaded extra tts channels:", extra_tts.shape)
 
@@ -117,11 +114,11 @@ print("\nTrain set size:", len(train_idx))
 print("Validation set size:", len(val_idx))
 print("Test set size:", len(test_idx))
 
-# Building run‐specific directories under out_dir by joining out_dir + validation and test group numbers + base/full models
+# Building run‐specific directories under out_dir by joining out_dir + validation and test group numbers + EMPRES-type-specific subdir
 run_dir = os.path.join(
     out_dir,
     f"val{val_group}_test{test_group}",
-    "base_models" if extra=="none" else f"full_models_{extra}",
+    cfg["subdir"],
 )
 
 os.makedirs(run_dir, exist_ok=True)
@@ -136,38 +133,44 @@ os.makedirs(PLOTS_DIR, exist_ok=True)
 # ============================================================================
 # 6. Load Global Statistics for Standardization
 # ============================================================================
-train_groups_sorted = np.sort(train_groups)
-train_groups_str    = "_".join(map(str, train_groups_sorted))
-global_stats_file   = os.path.join(DATA_DIR,f"global_stats_train_{train_groups_str}.npz")
-stats = np.load(global_stats_file)
-tss_mean = stats['tss_mean']
-tss_std  = stats['tss_std']
-tts_mean = stats['tts_mean']
-tts_std  = stats['tts_std']
+if cfg["standardize"]:
+    train_groups_sorted = np.sort(train_groups)
+    train_groups_str    = "_".join(map(str, train_groups_sorted))
+    global_stats_file   = os.path.join(DATA_DIR,f"global_stats_train_{train_groups_str}.npz")
+    stats = np.load(global_stats_file)
+    base_keys = cfg["base_stats_keys"]
+    tss_mean = stats[base_keys[0]]
+    tss_std  = stats[base_keys[1]]
+    tts_mean = stats[base_keys[2]]
+    tts_std  = stats[base_keys[3]]
 
-if extra == "pred":
-    # loading mean and std of a2z predictions from stats file
-    extra_tss_mean = stats['tss_pred_mean']
-    extra_tss_std  = stats['tss_pred_std']
-    extra_tts_mean = stats['tts_pred_mean']
-    extra_tts_std  = stats['tts_pred_std']
-
-elif extra == "emb":
-    # loading mean and std of a2z embeddings from stats file
-    extra_tss_mean = stats['tss_emb_mean']
-    extra_tss_std  = stats['tss_emb_std']
-    extra_tts_mean = stats['tts_emb_mean']
-    extra_tts_std  = stats['tts_emb_std']
-
+    if cfg["extra_stats_keys"] is not None:
+        # loading mean and std of extra channels from stats file
+        extra_keys = cfg["extra_stats_keys"]
+        extra_tss_mean = stats[extra_keys[0]]
+        extra_tss_std  = stats[extra_keys[1]]
+        extra_tts_mean = stats[extra_keys[2]]
+        extra_tts_std  = stats[extra_keys[3]]
+    else:
+        extra_tss_mean = extra_tss_std = extra_tts_mean = extra_tts_std = None
+    stats.close()
+    print("Loaded global stats from", global_stats_file)
 else:
+    # For EMPRES 0 (OHE input): skip .npz load and use identity standardization
+    # (mean=0, std=1) so DNADualDataset passes OHE values through unchanged.
+    base_C = tss.shape[1]
+    base_L = tss.shape[2]
+    tss_mean = np.zeros((1, base_C, base_L), dtype=np.float32)
+    tss_std  = np.ones((1, base_C, base_L), dtype=np.float32)
+    tts_mean = np.zeros((1, base_C, base_L), dtype=np.float32)
+    tts_std  = np.ones((1, base_C, base_L), dtype=np.float32)
     extra_tss_mean = extra_tss_std = extra_tts_mean = extra_tts_std = None
-stats.close()
-print("Loaded global stats from", global_stats_file)
+    print("Skipped global stats load (identity standardization for OHE input).")
 
 # Determine model input channels
-base_channels = tss_mean.shape[1]  # Expected: 384
-extra_channels = extra_tss.shape[1] if extra != "none" else 0
-in_channels = base_channels + extra_channels  # Expected: 384 + extra_channels
+base_channels = tss_mean.shape[1]  # Expected: 384 (EMPRES 1-3), 925 (EMPRES 4), 4 (EMPRES 0)
+extra_channels = extra_tss.shape[1] if extra_tss is not None else 0
+in_channels = base_channels + extra_channels  # Expected: base_channels + extra_channels
 
 # ============================================================================
 # 7. Create Test Dataset & DataLoader
@@ -235,10 +238,14 @@ for idx, row in top_trials.iterrows():
         "dropout_rate":        float(row["dropout_rate"]),
         "batch_norm":          True,
     }
+    # EMPRES 0 has two extra Optuna-searched categorical hyperparameters
+    if EMPRES_type == 0:
+        hp["dilation"]  = int(row["dilation"])
+        hp["pool_size"] = int(row["pool_size"])
     dummy = DummyTrial(hp)
 
     # Instantiate and load the model with correct in_channels
-    model = TwoBranchCNN(dummy, in_channels=in_channels).to(device)
+    model = cfg["model_class"](dummy, in_channels=in_channels, **cfg["model_kwargs"]).to(device)
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint["model_state_dict"])
 
