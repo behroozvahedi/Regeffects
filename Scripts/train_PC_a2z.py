@@ -353,7 +353,21 @@ if __name__ == "__main__":
         direction="minimize",
         load_if_exists=True
     )
-    study.optimize(objective, n_trials=200)
+
+    # Run Optuna up to a target *total* number of finalized trials (resume-safe):
+    # on a fresh study n_existing=0 so this runs the full 200; on a resumed study
+    # it runs only the remainder, so the study always ends at TARGET_N_TRIALS total.
+    TARGET_N_TRIALS = 200
+    n_existing = len(study.get_trials(
+        deepcopy=False,
+        states=(optuna.trial.TrialState.COMPLETE, optuna.trial.TrialState.PRUNED),
+    ))
+    n_remaining = max(0, TARGET_N_TRIALS - n_existing)
+    print(f"Study has {n_existing} completed/pruned trials; targeting {TARGET_N_TRIALS} total, will run {n_remaining} more.")
+    if n_remaining > 0:
+        study.optimize(objective, n_trials=n_remaining)
+    else:
+        print(f"Study already has {n_existing} >= {TARGET_N_TRIALS} trials; skipping optimize().")
 
     print("\nBest trial:")
     best_trial = study.best_trial
