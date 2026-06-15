@@ -4,19 +4,41 @@ import torch
 import pandas as pd
 import argparse
 
+from utils_PC_a2z import EMPRES_CONFIG
+
 parser = argparse.ArgumentParser(
     description="Creating a data frame containing 2BCNN models info"
 )
 parser.add_argument(
-    "--model_dir", type=str, required=True,
-    help="Absolute path to the directory where models are stored."
+    "--out_dir", type=str, required=True,
+    help="Base output directory (must match train.py --out_dir)"
+)
+parser.add_argument(
+    "--val_group", type=str, required=True,
+    help="Validation group ID (e.g. '4')"
+)
+parser.add_argument(
+    "--test_group", type=str, required=True,
+    help="Test group ID (e.g. '5')"
+)
+parser.add_argument(
+    "--EMPRES_type", type=int, required=True, choices=[0, 1, 2, 3, 4],
+    help="EMPRES model type to summarize (0=OHE, 1=PC, 2=PC+a2z_pred, 3=PC+a2z_emb, 4=a2z_emb)"
 )
 
 args = parser.parse_args()
-model_dir = args.model_dir
+out_dir = args.out_dir
+val_group = args.val_group
+test_group = args.test_group
+EMPRES_type = args.EMPRES_type
+cfg = EMPRES_CONFIG[EMPRES_type]
 
-# Directory where the checkpoint files are saved.
-CHECKPOINTS_DIR = model_dir
+# Building the run-specific directory under out_dir by joining out_dir + validation and test group numbers + EMPRES-type-specific subdir
+CHECKPOINTS_DIR = os.path.join(
+    out_dir,
+    f"val{val_group}_test{test_group}",
+    cfg["subdir"],
+)
 
 # Use glob to get all checkpoint files matching the pattern.
 # trial checkpoints are named like "checkpoint_trial_*.pth"
