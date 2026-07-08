@@ -18,25 +18,22 @@ Output files (all written into --out_dir):
 Metadata columns of sieve_metadata.csv:
     array_index                        # 0..N-1, aligned with .npy rows
     Unnamed: 0                         # original row number from data.bd.csv
-    gene, species, transcript          # Camous's convention (see below)
-    group_for_cross_validation         # space-separated plant-line cohort
+    gene, species, transcript          # convention
+    group_for_cross_validation         # line IDs (space-separated)
     hash_seq                           # Python hash(tss_extracted + tts_extracted)
     original_promoter_length           # sanity fields
     original_terminator_length
     extracted_tss_length
     extracted_tts_length
 
-Column semantics (following Camous's `make.bd.data.py` convention exactly,
-NOT renamed here to preserve maximum consistency with his existing pipeline):
+Column semantics (following `make.bd.data.py` convention exactly):
     'gene'                       BD21.3 short gene ID (e.g. "1G0000200")
     'species'                    BD21 long gene ID  (e.g. "Bradi1g00200"),
                                  used by generate_predictions_SIEVE.py to look up
                                  the CV group via gene.id.translation.tsv + data.csv.
     'transcript'                 BD21.3 transcript ID (e.g. "BdiBd21-3.1G0000200.1")
-    'group_for_cross_validation' Camous stored the space-separated plant-line
-                                 cohort here (NOT an integer 1..5). Preserved verbatim.
-    'hash_seq'                   Python hash(tss_extracted + tts_extracted) for
-                                 downstream pass-through into predictions_EMPRES_0.tsv.
+    'group_for_cross_validation' space-separated plant line IDs
+    'hash_seq'                   Python hash(tss_extracted + tts_extracted) for downstream pass-through into predictions_EMPRES_0.tsv.
 
 CLI:
     --data_file   Path to data.bd.csv
