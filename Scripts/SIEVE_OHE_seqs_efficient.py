@@ -64,8 +64,8 @@ PROMOTER_COL   = "promoter"
 TERMINATOR_COL = "terminator"
 
 # From data.bd.csv: the columns we carry through into sieve_metadata.csv,
-# in the same order Camous writes them in make.bd.data.py. `median_TPM` and
-# `gene_family` are dropped because they are 100% NaN in data.bd.csv.
+# in the same order written in make.bd.data.py.
+# `median_TPM` and `gene_family` are dropped because they are 100% NaN in data.bd.csv.
 METADATA_COLS = [
     "Unnamed: 0",
     "gene",
