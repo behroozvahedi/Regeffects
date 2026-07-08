@@ -49,7 +49,7 @@ import pandas as pd
 
 
 # ============================================================
-# Constants (identical to PhytoExpr_OHE_seqs_for_EMPRES_0_efficient*.py)
+# Constants
 # ============================================================
 EXPECTED_ORIGINAL_SEQ_LEN  = 10000
 EXPECTED_EXTRACTED_SEQ_LEN = 5000
