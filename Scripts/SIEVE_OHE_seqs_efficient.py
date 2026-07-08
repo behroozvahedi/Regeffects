@@ -162,7 +162,7 @@ def main():
     )
     parser.add_argument(
         "--data_file", type=str, required=True,
-        help="Path to data.bd.csv (produced by Camous's make.bd.data.py).",
+        help="Path to data.bd.csv (produced by make.bd.data.py).",
     )
     parser.add_argument(
         "--out_dir", type=str, required=True,
@@ -358,10 +358,8 @@ def main():
         tts_ohe_memmap[start:end] = one_hot_encode_batch(tts_batch)
 
         # Per-row hash of the extracted (tss + tts) 10000-char string, matching
-        # the spirit of Camous's `hash(tss+tts)` in make.bd.data.py. Only used
-        # as pass-through into the final predictions_EMPRES_0.tsv output; not a
-        # cryptographic hash and not required to match Camous's h5 hash exactly
-        # (Guillaume's downstream R script does not consume this value).
+        # the spirit of `hash(tss+tts)` in make.bd.data.py. Only used
+        # as pass-through into the final predictions_EMPRES_0.tsv output
         hashes = [hash(str(tss_batch[i]) + str(tts_batch[i])) for i in range(n)]
 
         # Metadata slice, chunk-appended to sieve_metadata.csv.
