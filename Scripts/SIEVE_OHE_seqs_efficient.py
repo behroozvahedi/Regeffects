@@ -2,8 +2,7 @@
 """
 SIEVE_OHE_seqs_efficient.py
 
-Read the SIEVE data file `data.bd.csv` (produced by Camous's
-`Data_processing/make.bd.data.py`), extract 5000-bp TSS and TTS sequences
+Read the SIEVE data file `data.bd.csv`, extract 5000-bp TSS and TTS sequences
 from the 10000-bp `promoter` and `terminator` columns, one-hot-encode them
 into (N, 4, 5000) uint8 arrays, and save them alongside a per-row metadata
 CSV that links every .npy row back to its (gene, transcript, cohort, hash).
