@@ -186,7 +186,7 @@ def Cohort(fam_file):
     return cohort
 
 def main():
-    workdir = '/Volumes/N1/Embeddings/DATA/'
+    workdir = '/Users/au468646/Downloads/Embeddings/'
 
     fasta_file = workdir+'BdistachyonBd21_3_537_v1.0.fa'
     gff_file = workdir+'BdistachyonBd21_3_537_v1.2.gene.gff3'
