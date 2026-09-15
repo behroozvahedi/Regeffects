@@ -181,7 +181,7 @@ class H5Dataset(Dataset):
             #tts_sample = np.expand_dims(tts_sample, axis=0)
             return self.models[test_group], str(row_caduceus['group'].decode()), row_caduceus['gene'].decode(), row_caduceus['transcript'].decode(), int(row_caduceus['hash']), test_group, torch.tensor(tss_sample, dtype=torch.float32), torch.tensor(tts_sample, dtype=torch.float32)
         else:
-            print('skipping gene: %s, transcript: %s'%(row['gene'].decode(), row['transcript'].decode()))
+            print('skipping gene: %s, transcript: %s'%(row_caduceus['gene'].decode(), row_caduceus['transcript'].decode()))
             return None, None, None, None, None, None, None, None
 
     def done(self):
@@ -334,7 +334,7 @@ def main():
                 if not counter % 10000:
                     print(counter)
                 models, ids, gene, transcript, h, test_group, tss, tts = dataset.__getitem__(index)
-                if model is None:
+                if models is None:
                     continue
                 #print(tss.shape)
                 #print(tts.shape)

@@ -11,7 +11,7 @@ def SequenceToChunk(sequence, subsequence_start, subsequence_length, core_sequen
     return(chunks)
 
 def IterateSequence(seq, downstream_len, upstream_len, core_len, input_size):
-    return SequenceToChunk(seq, (len(seq)/2)-downstream_len, upstream_len + downstream_len, core_len, input_size)
+    return SequenceToChunk(seq, (len(seq)/2)-upstream_len, upstream_len + downstream_len, core_len, input_size)
 
 #Loads in the TSS and TTS sequences used to train PlantCaduceus, and splits them up into a number of chunks
 #Each chunk is be the size of the sequence input length of the given species.

@@ -15,73 +15,21 @@ def TranslateID(file):
 
 def Invert(sequence):
     sequence = sequence.upper()
-    inverted = ''
+
+    IUPAC = {'A':'T','T':'A','C':'G','G':'C','W':'W','S':'S','M':'K','K':'M','R':'Y','Y':'R','B':'V','V':'B','D':'H','H':'D','N':'N'}
+
+    inverted = []
+
     for index in range(len(sequence)):
-        if sequence[index] == 'A':
-            nucleotide = 'T'
-        elif sequence[index] == 'T':
-            nucleotide = 'A'
-        elif sequence[index] == 'C':
-            nucleotide = 'G'
-        elif sequence[index] == 'G':
-            nucleotide = 'C'
-        #Adenine: A – – – V
-        elif sequence[index] == 'A':
-            nucleotide = 'V'
-        #Cytosine: – C – – H
-        elif sequence[index] == 'C':
-            nucleotide = 'H'
-        #Guanine: – – G – D
-        elif sequence[index] == 'G':
-            nucleotide = 'D'
-        #Thymine: – – – T B
-        elif sequence[index] == 'T':
-            nucleotide = 'B'
-        #Weak: A – – T S
-        elif sequence[index] == 'W':
-            nucleotide = 'S'
-        #Strong: – C G – W
-        elif sequence[index] == 'S':
-            nucleotide = 'W'
-        #aMino: A C – – K
-        elif sequence[index] == 'M':
-            nucleotide = 'K'
-        #Keto: – – G T M
-        elif sequence[index] == 'K':
-            nucleotide = 'M'
-        #puRine: A – G – Y
-        elif sequence[index] == 'R':
-            nucleotide = 'Y'
-        #pYrimidine: – C – T R
-        elif sequence[index] == 'Y':
-            nucleotide = 'R'
-        #not A: – C G T A
-        elif sequence[index] == 'B':
-            nucleotide = 'A'
-        #not C: A – G T C
-        elif sequence[index] == 'D':
-            nucleotide = 'C'
-        #not G: A C – T G
-        elif sequence[index] == 'H':
-            nucleotide = 'G'
-        #not T: A C G – T
-        elif sequence[index] == 'V':
-            nucleotide = 'T'
-        #any Nucleotide: A C G T N
-        #elif sequence[index] == 'Z'
-            #nucleotide = 'N'
-        #Zero: – – – – Z
-        #elif sequence[index] == 'N'
-            #nucleotide = 'Z'
-        elif sequence[index] == 'N':
-            nucleotide = 'N'
+        if sequence[index] in IUPAC:
+            inverted.append(IUPAC[sequence[index]])
         else:
-            print('Error: Unrecognized nucleotide %s at %i in %s'%(sequence[index], index, sequence))
-            exit(0)
+            raise ValueError(
+                'Unrecognized nucleotide %s at %i in %s'
+                % (sequence[index], index, sequence)
+            )
 
-        inverted = inverted+nucleotide
-
-    return(inverted[::-1])
+    return ''.join(inverted[::-1])
 
 class Sequence:
     def __init__(self, id, tss, tts, strand):

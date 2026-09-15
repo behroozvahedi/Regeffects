@@ -16,7 +16,7 @@ def SequenceToChunk(sequence, subsequence_start, subsequence_length, core_sequen
     return(chunks, sequence[seq_start:seq_end])
 
 def IterateSequence(seq, downstream_len, upstream_len, core_len, input_size):
-    return SequenceToChunk(seq, (len(seq)/2)-downstream_len, upstream_len + downstream_len, core_len, input_size)
+    return SequenceToChunk(seq, (len(seq)/2)-upstream_len, upstream_len + downstream_len, core_len, input_size)
 
 def ExportSequences(filein, fileout, core_sequence_length = 250, model_input_size = 512):
     tss_upstream = 4000

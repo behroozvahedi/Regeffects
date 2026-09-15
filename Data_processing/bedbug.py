@@ -185,50 +185,6 @@ class BEDBUG:
 		else:
 			return self.chromosomes[chr][iStart:iEnd]
 
-	def chromosomeGenotypes(self, chr, csubset):
-		if verbose:
-			print('call: chromosome variants')
-		timestamp = time()
-		vindices = []
-		cindices = []
-		cases = []
-		variants = []
-
-		if type(chr) != str:
-			chr = str(chr)
-		vindex = 0
-		vseekindex = 0
-		for c in self.chromosomes:
-			if c == chr:
-				for variant in self.chromosomes[chr]:
-					vindices.append(vindex)
-					vseekindices.append(vseekindex)
-					vindex +=  1
-					vseekindex += 1
-				break
-			else:
-				vseekindex += len(self.chromosomes[c])
-
-		cindex = 0
-		for case in self.cases:
-			if case in csubset or len(csubset) == 0:
-				cindices.append(cindex)
-				cases.append(case)
-			cindex = cindex + 1
-		if not quiet:
-			print('Found ' + str(len(vindices)) + ' variants for ' + str(len(cindices)) + ' cases in region ' + str(chr) + ':' + str(start) + '-' + str(end) )
-
-		if verbose:
-			print('call took: %.1fs'%(time()-timestamp))
-
-		if len(vindices) > 0:
-			(perfect, genotypes) = self.extract(chr,vindices,vseekindices,cindices)
-		else:
-			perfect = []
-			genotypes = []
-
-		return(variants, cases, perfect, genotypes)
-
 	def regionGenotypes(self, chr, start, end, csubset):
 		if verbose:
 			print('call: region genotypes')
@@ -331,7 +287,7 @@ class BEDBUG:
 		incompletes = 0
 
 		for casevars in data:
-			h = hash(casevars.tostring())
+			h = hash(casevars.tobytes())
 
 			if casevars.min() < 0:
 				incompletes = incompletes + 1
@@ -472,53 +428,6 @@ class BEDBUG:
 		bed.close()
 		if verbose:
 			print('call took: %.1fs'%(time()-timestamp))
-
-	def regionGenotypes(self, chr, start, end, csubset):
-		if verbose:
-			print('call: region genotypes')
-		timestamp = time()
-		vindices = []
-		vseekindices = []
-		cindices = []
-		cases = []
-		variants = []
-
-		if type(chr) != str:
-			chr = str(chr)
-		vindex = 0
-		vseekindex = 0
-		for c in self.chromosomes:
-			if c == chr:
-				for variant in self.chromosomes[chr]:
-					if variant.pos >= start and variant.pos <= end:
-						vindices.append(vindex)
-						vseekindices.append(vseekindex)
-						variants.append(variant)
-					vindex +=  1
-					vseekindex +=  1 
-				break
-			else:
-				vseekindex += len(self.chromosomes[c])
-
-		cindex = 0
-		for case in self.cases:
-			if case in csubset or len(csubset) == 0:
-				cindices.append(cindex)
-				cases.append(case)
-			cindex = cindex + 1
-		if not quiet:
-			print('Found ' + str(len(vindices)) + ' variants for ' + str(len(cindices)) + ' cases in region ' + str(chr) + ':' + str(start) + '-' + str(end) )
-
-		if verbose:
-			print('call took: %.1fs'%(time()-timestamp))
-
-		if len(vindices) > 0:
-			(perfect, genotypes) = self.extract(chr,vindices,vseekindices,cindices)
-		else:
-			perfect = []
-			genotypes = []
-
-		return(variants, cases, perfect, genotypes)
 
 	def regionSingletons(self, chr, start, end, csubset):
 		if verbose:

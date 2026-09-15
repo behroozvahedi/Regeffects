@@ -14,5 +14,10 @@ def FASTA(file):
                 sequence = ''
         if transcript == None and line[0] == '>':
             transcript = line[1:].strip('\n')
+
     file.close()
+
+    if transcript is not None:
+        sequences[transcript] = sequence
+
     return sequences
