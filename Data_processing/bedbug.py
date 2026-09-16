@@ -482,53 +482,6 @@ class BEDBUG:
 
 		return(variants, cases, is_singleton, singleton_hom, singleton_het, is_multix)
 
-	def chromosomeSingletons(self, chr, csubset):
-		if verbose:
-			print('call: chromosome singletons')
-		timestamp = time()
-		vindices = []
-		vseekindices = []
-		cindices = []
-		cases = []
-		variants = []
-
-		if type(chr) != str:
-			chr = str(chr)
-
-		vindex = 0
-		vseekindex = 0
-		for c in self.chromosomes:
-			if c == chr:
-				for variant in self.chromosomes[chr]:
-					variants.append(variant)
-					vindices.append(vindex)
-					vseekindices.append(vseekindex)
-					vindex += 1
-					vseekindex += 1
-				break
-			else:
-				vseekindex += len(self.chromosomes[c])
-
-		cindex = 0
-		for case in self.cases:
-			if case in csubset or len(csubset) == 0:
-				cindices.append(cindex)
-				cases.append(case)
-			cindex = cindex + 1
-		if not quiet:
-			print('Found ' + str(len(vindices)) + ' variants for ' + str(len(cindices)) + ' cases in region ' + str(chr) + ':' + str(start) + '-' + str(end) )
-
-		if verbose:
-			print('call took: %.1fs'%(time()-timestamp))
-
-		if len(vindices) > 0:
-			(is_singleton, singleton_hom, singleton_het, is_multix, is_alt) = self.singletons(chr,vindices,vseekindices,cindices)
-		else:
-			perfect = []
-			genotypes = []
-
-		return(variants, cases, is_singleton, singleton_hom, singleton_het, is_multix, is_alt)
-
 	def singletons(self, chr, vindices, vseekindices, cindices):
 		if verbose:
 			print('call: singletons')

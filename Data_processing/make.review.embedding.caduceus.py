@@ -71,7 +71,7 @@ def ProcessSequences(datafile, h5file, model, tokenizer, device, core_sequence_s
         sequences.append(items[3])
         features.append('tss')
         chunks.append(items[5])
-        hashes.append(int(items[6]))
+        hashes.append(0)
 
         genes.append(items[0])
         transcripts.append(items[1])
@@ -79,7 +79,7 @@ def ProcessSequences(datafile, h5file, model, tokenizer, device, core_sequence_s
         sequences.append(items[4])
         features.append('tts')
         chunks.append(items[5])
-        hashes.append(int(items[6]))
+        hashes.append(0)
 
         if chunk_size < int(items[5])+1:
             chunk_size = int(items[5])+1
@@ -284,15 +284,12 @@ class H5Dataset(Dataset):
 def main():
     workdir = '/usr/home/qgg/camo/Embeddings/'
     outdir = '/usr/home/qgg/camo/Embeddings/'
-    #workdir = '/Volumes/N1/Embeddings/'
-    #outdir = '/Volumes/N1/Embeddings/'
-    in_file = 'bd.sequences.caduceus.tsv'
-    out_file = 'embeddings.bd.caduceus.h5'
 
-    perform_extraction = True
-    perform_testing = False
+    species_set = ['Actinidia chinensis','Brachypodium sylvaticum','Brassica oleracea','Panicum hallii','Pisum sativum','Prunus persica','Secale cereale','Triticum dicoccoides','Vigna unguiculata','Ziziphus jujuba']
 
-    if perform_extraction:
+    for species in species_set:
+        in_file = 'caduceus.sequences.%s.tsv'%species
+        out_file = 'embeddings.%s.caduceus.h5'%species
         #Set to None to load all sequences at once
         max_sequences_loaded = 10000
 
@@ -302,20 +299,6 @@ def main():
         device = 'cuda'
         model, tokenizer = load_model_and_tokenizer(workdir+'PlantCaduceus_l20', device)
         ProcessSequences(workdir+in_file, outdir+out_file, model, tokenizer, device, core_sequence_size, batch_size, max_sequences_loaded)
-
-    if perform_testing:
-        print('Reading h5 data.')
-        h5data = H5Dataset(outdir+out_file)
-        dataloader = DataLoader(h5data, batch_size=1, shuffle=False)
-        for gene, transcript, group, h, tss, tts in dataloader:
-            print('gene: %s'%gene[0])
-            print('transcript: %s'%transcript[0])
-            print('group: %i'%len(group[0].split(' ')))
-            print('hash: %i'%h[0])
-            print(tss[0].shape)
-            print(tts[0].shape)
-            break
-        h5data.done()
 
 if __name__ == "__main__":
     main()

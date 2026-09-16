@@ -67,7 +67,7 @@ def ProcessSequences(datafile, h5file, model, max_sequences = None):
         sequences.append(items[3])
         features.append('tss')
         chunks.append(items[5])
-        hashes.append(int(items[6]))
+        hashes.append(0)
 
         genes.append(items[0])
         transcripts.append(items[1])
@@ -75,7 +75,7 @@ def ProcessSequences(datafile, h5file, model, max_sequences = None):
         sequences.append(items[4])
         features.append('tts')
         chunks.append(items[5])
-        hashes.append(int(items[6]))
+        hashes.append(0)
 
         if chunk_size < int(items[5])+1:
             chunk_size = int(items[5])+1
@@ -161,50 +161,21 @@ class H5Dataset():
         self.file.close()
 
 def main():
-    #workdir = '/Volumes/N1/Embeddings/'
-    #outdir = '/Volumes/N1/Embeddings/'
     workdir = '/usr/home/qgg/camo/Embeddings/'
     outdir = '/usr/home/qgg/camo/Embeddings/'
-    in_file = 'bd.sequences.a2z.tsv'
-    out_file = 'embeddings.bd.a2z.h5'
 
-    perform_extraction = True
-    perform_testing = False
+    species_set = ['Actinidia chinensis','Brachypodium sylvaticum','Brassica oleracea','Panicum hallii','Pisum sativum','Prunus persica','Secale cereale','Triticum dicoccoides','Vigna unguiculata','Ziziphus jujuba']
 
-    if perform_extraction:
+    for species in species_set:
+        in_file = 'a2z.sequences.%s.tsv'%species
+        out_file = 'embeddings.%s.a2z.h5'%species
+
         model = tf.keras.models.load_model(workdir+'model-accessibility-full.h5')
         new_model = Model(inputs=model.input, outputs=[model.get_layer('dense').output,model.get_layer('dense_1').output])
 
         #Set to None to load all sequences at once
         max_sequences_loaded = 10000
         ProcessSequences(workdir+in_file, outdir+out_file, new_model, max_sequences_loaded)
-
-    if perform_testing:
-        print('Reading h5 data.')
-        h5data = H5Dataset(outdir+out_file)
-        #dataloader = DataLoader(h5data, batch_size=1, shuffle=False)
-        for index in range(h5data.__len__()):
-
-            gene, transcript, group, h, tss_embed, tts_embed, tss_pred, tts_pred  = h5data.__getitem__(index)
-            print('gene: %s'%gene)
-            print('transcript: %s'%transcript)
-            print('group: %i'%len(group.split(' ')))
-            print('hash: %i'%h)
-            print(tss_embed.shape)
-            print(tts_embed.shape)
-            print(tss_pred.shape)
-            print(tts_pred.shape)
-
-            #print('gene: %s'%gene[0])
-            #print('transcript: %s'%transcript[0])
-            #print('group: %i'%len(group[0].split(' ')))
-            #print('hash: %i'%h[0])
-            #print(tss_embed[0].shape)
-            #print(tts_embed[0].shape)
-            #print(tss_pred[0].shape)
-            #print(tts_pred[0].shape)
-            break
-        h5data.done()
 
 if __name__ == "__main__":
     main()

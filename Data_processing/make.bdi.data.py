@@ -1,4 +1,4 @@
-workdir = '/Volumes/N1/Embeddings/DATA/'
+workdir = '/Users/au468646/Downloads/Embeddings/'
 filein = open(workdir+'data.bd.csv','r')
 fileout = open(workdir+'data.bdi.csv','w')
 

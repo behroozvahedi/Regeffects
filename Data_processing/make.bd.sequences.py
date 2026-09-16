@@ -65,7 +65,7 @@ def ExportSequences(filein, fileout, core_sequence_length = 250, model_input_siz
     print('Exported %i sequences, skipped %i'%(counter, skipped))
 
 def main():
-    workdir = '/Volumes/N1/Embeddings/DATA/'
+    workdir = '/Users/au468646/Downloads/Embeddings/'
 
     print('Exporting Caduceus sequences.')
     ExportSequences(workdir+'data.bd.csv', workdir+'bd.sequences.caduceus.tsv', 250, 512)

@@ -220,7 +220,7 @@ def main():
             continue
         items = line.strip('\n').split('\t')
         if items[2] == 'mRNA':
-            mrna = mRNA(items[0], int(items[3])-1,int(items[4])-1,items[6], items[8])
+            mrna = mRNA(items[0], int(items[3])-1, int(items[4]), items[6], items[8])
             bd21 = ''
             if mrna.id in translation:
                 bd21 = translation[mrna.id]
