@@ -87,6 +87,14 @@ This is the order of running scripts for each section.
 
 	(f) generate_predictions_hd5.py
 
+	(g) prepare.sequences.review.py
+
+	(h) make.review.embedding.a2z.py
+
+	(i) make.review.embedding.caduceus.py
+
+	(j) generate_review_predictions_hd5.py
+
 4. Analysis:
 
 	(a) make.wp2.dataset.py
