@@ -4,9 +4,17 @@ These following were scripts used to obtain TSS and TTS features from PlantCaduc
 
 prepare.sequences.py: This script reads PlantCaduceus training data file "data.csv", and outputs sequences to be used for PlantCaduceus and a2z feature extraction.
 
-sequence2embedding.caduceus.py: This script extracts features from PlantCaduceus for the sequences. It requires a CUDA capable machine.
+sequence2embedding.caduceus.py: This script extracts training data features from PlantCaduceus for the sequences. It requires a CUDA capable machine.
 
-sequence2embedding.a2z.py: This script extracts features from a2z for the sequences. It runs on CPU.
+sequence2embedding.a2z.py: This script extracts training data features from a2z for the sequences. It runs on CPU.
+
+These following were scripts used to obtain TSS and TTS features from PlantCaduceus and a2z, upon which the trained models were tested. The DNA sequences and TPM data are sourced from the various plant species with available TPM values.
+
+prepare.sequences.review.py: This script reads the species data file "data.review.csv", and outputs sequences to be used for PlantCaduceus and a2z feature extraction.
+
+make.review.embedding.caduceus.py: This script extracts review data features from PlantCaduceus for the sequences. It requires a CUDA capable machine.
+
+make.review.embedding.a2z.py: This script extracts review data features from a2z for the sequences. It runs on CPU.
 
 The following scripts were used for RNAseq processing.
 
