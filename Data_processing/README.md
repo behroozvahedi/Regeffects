@@ -101,6 +101,3 @@ This is the order of running scripts for each section.
 
 	(a) make.wp2.dataset.py
 
-	(b) peer.sh
-
-  	(c) wp2.analysis.R
