@@ -67,6 +67,14 @@ EMPRES_type = args.EMPRES_type
 cfg = EMPRES_CONFIG[EMPRES_type]
 print(f"Reading input data from: {data_dir}")
 print(f"\nUsing validation group: {val_group} and test group: {test_group}, EMPRES_type: {EMPRES_type}")
+print(f"Checkpoints will be saved under subdir: {cfg['subdir']}")
+print("Early stopping: patience=10 epochs, min_improvement=0.01 (a new best is recorded only if val_loss drops by at least 0.01)")
+
+# Canonical CV fold numbering used throughout the project:
+#   fold 1: val1_test2, fold 2: val2_test3, ..., fold 5: val5_test1
+FOLD_NUMBER = {(1, 2): 1, (2, 3): 2, (3, 4): 3, (4, 5): 4, (5, 1): 5}
+fold_num = FOLD_NUMBER.get((int(val_group), int(test_group)))
+fold_label = f"Fold {fold_num}" if fold_num is not None else f"val{val_group}_test{test_group}"
 
 # ============================================================================
 # 3. Global directory for input data
@@ -297,7 +305,12 @@ def objective(trial):
 
         print(f"Epoch {epoch+1}: train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, RMSE={rmse:.4f}")
 
-        if val_loss < best_val_loss:
+        # A new best is recorded only when validation loss drops by at least
+        # min_improvement (0.01). That update also resets the patience clock.
+        # Tiny drops (< 0.01) do not overwrite the checkpoint and do not
+        # postpone early stopping.
+        if val_loss < best_val_loss - min_improvement:
+            improvement = best_val_loss - val_loss
             best_val_loss   = val_loss
             best_epoch      = epoch + 1
             best_checkpoint = {
@@ -311,13 +324,20 @@ def objective(trial):
                 'train_loss_history': train_loss_history,
                 'val_loss_history': val_loss_history,
             }
-
-        if (epoch + 1 - best_epoch) >= lookahead_epochs:
+            print(
+                f"  New best at epoch {best_epoch}: val_loss={val_loss:.4f} "
+                f"(improvement={improvement:.4f} >= {min_improvement})"
+            )
+        elif (epoch + 1 - best_epoch) >= lookahead_epochs:
             improvement = best_val_loss - val_loss
-            if improvement < min_improvement:
-                print(f"Early stopping triggered at epoch {epoch+1}: Improvement over best ({best_val_loss:.4f}) is only {improvement:.4f} (< {min_improvement}) after {lookahead_epochs} epochs.")
-                trial.set_user_attr("early_stopped", True)
-                break
+            print(
+                f"Early stopping triggered at epoch {epoch+1}: no validation-loss "
+                f"improvement of at least {min_improvement} over best "
+                f"({best_val_loss:.4f}) for {lookahead_epochs} epochs "
+                f"(current val_loss={val_loss:.4f}, change vs best={improvement:.4f})."
+            )
+            trial.set_user_attr("early_stopped", True)
+            break
 
         trial.report(val_loss, epoch)
 
@@ -423,7 +443,9 @@ if __name__ == "__main__":
         plt.plot(epochs_range, val_loss_history,   marker='o', label='Validation Loss')
         plt.xlabel("Epoch")
         plt.ylabel("Loss")
-        plt.title("Learning Curves for Best Trial - Standardized PC Embeddings - Single GPU")
+        plt.title(
+            f"Learning Curves for Best Trial - EMPRES_{EMPRES_type} - {fold_label}"
+        )
         plt.legend()
         ticks = [1] + list(range(5, max(epochs_range)+1, 5))
         plt.xticks(ticks)
