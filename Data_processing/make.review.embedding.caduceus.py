@@ -66,16 +66,16 @@ def ProcessSequences(datafile, h5file, model, tokenizer, device, core_sequence_s
             counter = 0
 
         genes.append(items[0])
-        transcripts.append(items[1])
-        groups.append(items[2])
+        transcripts.append('NA')
+        groups.append('NA')
         sequences.append(items[3])
         features.append('tss')
         chunks.append(items[5])
         hashes.append(0)
 
         genes.append(items[0])
-        transcripts.append(items[1])
-        groups.append(items[2])
+        transcripts.append('NA')
+        groups.append('NA')
         sequences.append(items[4])
         features.append('tts')
         chunks.append(items[5])

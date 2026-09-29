@@ -108,7 +108,7 @@ class H5Dataset(Dataset):
             if EXTRA != 'none':
                 row_a2z = self.table_a2z[idx]
                 if gene != row_a2z['gene'].decode():
-                    print('Error: caduceus and a2z row mismatch at index: %'%idx)
+                    print('Error: caduceus and a2z row mismatch at index: %i'%idx)
                     exit(0)
                 extra_tss_mean = self.stats[test_group]['tss_%s_mean'%EXTRA]
                 extra_tss_std = self.stats[test_group]['tss_%s_std'%EXTRA]
@@ -137,7 +137,8 @@ class H5Dataset(Dataset):
 
         #tss_sample = np.expand_dims(tss_sample, axis=0)
         #tts_sample = np.expand_dims(tts_sample, axis=0)
-        return self.models[test_group], str(row_caduceus['group'].decode()), row_caduceus['gene'].decode(), row_caduceus['transcript'].decode(), int(row_caduceus['hash']), test_group, torch.tensor(tss_sample, dtype=torch.float32), torch.tensor(tts_sample, dtype=torch.float32)
+
+        return self.models[test_group], row_caduceus['gene'].decode(), int(row_caduceus['hash']), test_group, torch.tensor(tss_sample, dtype=torch.float32), torch.tensor(tts_sample, dtype=torch.float32)
         #else:
         #    print('skipping gene: %s, transcript: %s'%(row['gene'].decode(), row['transcript'].decode()))
         #    return None, None, None, None, None, None, None, None
@@ -285,7 +286,7 @@ def main():
                     group_models[str(test_group)].append(model)
 
             out = open(workdir+'predictions_%s_%s.tsv'%(species,EXTRA),'w')
-            out.write('gene\ttranscript\ttest_group\ttpm\tmodel_1_pred\tmodel_2_pred2\tmodel_3_pred\tmodel_4_pred\tmodel_5_pred\n')
+            out.write('gene-transcript\ttest_group\tmodel_1_pred\tmodel_2_pred2\tmodel_3_pred\tmodel_4_pred\tmodel_5_pred\n')
             for test_group in range(1,6):
 
                 dataset = H5Dataset(caduceus_embeddings_file, a2z_embeddings_file, group_models, group_stats, str(test_group))
@@ -296,8 +297,9 @@ def main():
                         counter += 1
                         if not counter % 10000:
                             print(counter)
-                        models, ids, gene, transcript, h, test_group, tss, tts = dataset.__getitem__(index)
-                        if model is None:
+                        models, gene_transcript, h, test_group, tss, tts = dataset.__getitem__(index)
+
+                        if models is None:
                             continue
                         tss = torch.tensor(np.expand_dims(tss, axis=0), dtype=torch.float32)
                         tts = torch.tensor(np.expand_dims(tts, axis=0), dtype=torch.float32)
@@ -307,8 +309,7 @@ def main():
                         for model in models:
                             preds += '\t%f'%model(tss, tts).numpy()
 
-                        for id in ids.split(' '):
-                            out.write('%s\t%s\t%s\t%s%s\n'%(gene,transcript,test_group,id,preds))
+                        out.write('%s\t%s%s\n'%(gene_transcript,test_group,preds))
                 dataset.done()
             out.close()
 
