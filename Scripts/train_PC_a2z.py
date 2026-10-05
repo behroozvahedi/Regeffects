@@ -9,6 +9,7 @@ import optuna
 import optuna.visualization as vis
 import matplotlib.pyplot as plt
 import shutil
+import time
 import plotly
 import sklearn
 from copy import deepcopy
@@ -18,7 +19,9 @@ from utils_PC_a2z import (
     set_random_seeds,
     get_device,
     get_indices,
-    DNADualDataset,
+    DNADualBatchDataset,
+    BatchPreprocessor,
+    make_loader,
     TwoBranchCNN,
     TwoBranchCNN_OHE,
     EMPRES_CONFIG,
@@ -57,6 +60,19 @@ parser.add_argument(
     "--EMPRES_type", type=int, required=True, choices=[0, 1, 2, 3, 4],
     help="EMPRES model type to train (0=OHE, 1=PC, 2=PC+a2z_pred, 3=PC+a2z_emb, 4=a2z_emb)"
 )
+parser.add_argument(
+    "--num_workers", type=int, default=0,
+    help="DataLoader worker processes (default: 0 = load batches in the main process). "
+         "Keep it <= cpus-per-task - 1."
+)
+parser.add_argument(
+    "--prefetch_factor", type=int, default=2,
+    help="Batches prepared ahead by each worker; only used when --num_workers > 0 (default: 2)"
+)
+parser.add_argument(
+    "--in_ram", action="store_true",
+    help="Read the input arrays fully into RAM instead of memory-mapping them"
+)
 
 args = parser.parse_args()
 data_dir = args.data_dir
@@ -64,10 +80,16 @@ out_dir = args.out_dir
 val_group  = args.val_group
 test_group = args.test_group
 EMPRES_type = args.EMPRES_type
+num_workers = args.num_workers
+prefetch_factor = args.prefetch_factor
+in_ram = args.in_ram
 cfg = EMPRES_CONFIG[EMPRES_type]
 print(f"Reading input data from: {data_dir}")
 print(f"\nUsing validation group: {val_group} and test group: {test_group}, EMPRES_type: {EMPRES_type}")
 print(f"Checkpoints will be saved under subdir: {cfg['subdir']}")
+print(f"Data loading: {'in RAM' if in_ram else 'memory-mapped'}, num_workers={num_workers}"
+      + (f", prefetch_factor={prefetch_factor}" if num_workers > 0 else "")
+      + f", CPUs available to this job: {len(os.sched_getaffinity(0))}")
 print("Early stopping: patience=10 epochs, min_improvement=0.01 (a new best is recorded only if val_loss drops by at least 0.01)")
 
 # Canonical CV fold numbering used throughout the project:
@@ -83,10 +105,14 @@ fold_label = f"Fold {fold_num}" if fold_num is not None else f"val{val_group}_te
 DATA_DIR = data_dir
 
 # ============================================================================
-# 4. Data Loading Using Memory Mapping
+# 4. Data Loading (memory-mapped by default, fully in RAM with --in_ram)
 # ============================================================================
-tss = np.load(os.path.join(DATA_DIR, cfg["base_tss_file"]), mmap_mode = 'r', allow_pickle = True)
-tts = np.load(os.path.join(DATA_DIR, cfg["base_tts_file"]), mmap_mode = 'r', allow_pickle = True)
+# With --in_ram the base and extra arrays are kept as SEPARATE in-RAM arrays;
+# they are never concatenated on the CPU (that would need twice the memory).
+# The concatenation happens per batch on the GPU in BatchPreprocessor.
+input_mmap_mode = None if in_ram else 'r'
+tss = np.load(os.path.join(DATA_DIR, cfg["base_tss_file"]), mmap_mode = input_mmap_mode, allow_pickle = True)
+tts = np.load(os.path.join(DATA_DIR, cfg["base_tts_file"]), mmap_mode = input_mmap_mode, allow_pickle = True)
 TPM = np.load(os.path.join(DATA_DIR, "TPM.npy"), mmap_mode = 'r', allow_pickle = True)
 groups = np.load(os.path.join(DATA_DIR,"group_for_cross_validation.npy"), mmap_mode = 'r', allow_pickle = True)
 
@@ -101,8 +127,8 @@ TPM = np.log10(1 + TPM)
 
 # Optionally load extra channels (a2z_preds or a2z_embeddings)
 if cfg["extra_tss_file"] is not None:
-    extra_tss = np.load(os.path.join(DATA_DIR, cfg["extra_tss_file"]), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1, 20) for pred, (N, 925, 20) for emb
-    extra_tts = np.load(os.path.join(DATA_DIR, cfg["extra_tts_file"]), mmap_mode = 'r', allow_pickle = True)  # Expected: (N, 1, 20) for pred, (N, 925, 20) for emb
+    extra_tss = np.load(os.path.join(DATA_DIR, cfg["extra_tss_file"]), mmap_mode = input_mmap_mode, allow_pickle = True)  # Expected: (N, 1, 20) for pred, (N, 925, 20) for emb
+    extra_tts = np.load(os.path.join(DATA_DIR, cfg["extra_tts_file"]), mmap_mode = input_mmap_mode, allow_pickle = True)  # Expected: (N, 1, 20) for pred, (N, 925, 20) for emb
     print("Loaded extra tss channels:", extra_tss.shape)
     print("Loaded extra tts channels:", extra_tts.shape)
 
@@ -221,46 +247,55 @@ in_channels = base_channels + extra_channels     # Expected: base_channels + ext
 # # END SANITY CHECK
 
 # ============================================================================
-# 7. Create Dataset Instances
+# 7. Create Dataset Instances and the GPU-side Batch Preprocessor
 # ============================================================================
+# The datasets return RAW batches (no standardization, no concatenation).
 # Creating Training Dataset
-train_dataset = DNADualDataset(
+train_dataset = DNADualBatchDataset(
     train_idx,
     tss, tts, TPM,
-    tss_mean, tss_std,
-    tts_mean, tts_std,
-    extra_tss      = extra_tss,
-    extra_tss_mean = extra_tss_mean,
-    extra_tss_std  = extra_tss_std,
-    extra_tts      = extra_tts,
-    extra_tts_mean = extra_tts_mean,
-    extra_tts_std  = extra_tts_std,
+    extra_tss = extra_tss,
+    extra_tts = extra_tts,
 )
 
 # Creating Validation Dataset
-val_dataset = DNADualDataset(
+val_dataset = DNADualBatchDataset(
     val_idx,
     tss, tts, TPM,
+    extra_tss = extra_tss,
+    extra_tts = extra_tts,
+)
+
+# Standardization (base and extra channels each with their own mean/std) and
+# channel concatenation, executed on `device` for every batch.
+preprocess = BatchPreprocessor(
+    device,
     tss_mean, tss_std,
     tts_mean, tts_std,
-    extra_tss      = extra_tss,
     extra_tss_mean = extra_tss_mean,
     extra_tss_std  = extra_tss_std,
-    extra_tts      = extra_tts,
     extra_tts_mean = extra_tts_mean,
     extra_tts_std  = extra_tts_std,
+    standardize    = cfg["standardize"],
 )
 
 # ============================================================================
 # 8. Define the Objective Function for Optuna with Early Stopping
 # ============================================================================
 def objective(trial):
+    # Per-trial resource report: start the clock and reset the GPU peak-memory counter
+    trial_start_time = time.perf_counter()
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+
     # DataLoaders for this trial
     batch_size = trial.suggest_categorical("batch_size", [64, 128, 256])
     
-    train_loader = DataLoader(train_dataset, batch_size = batch_size, shuffle = True)
+    train_loader = make_loader(train_dataset, batch_size, shuffle = True,
+                               num_workers = num_workers, prefetch_factor = prefetch_factor)
 
-    val_loader = DataLoader(val_dataset, batch_size = batch_size, shuffle = False)
+    val_loader = make_loader(val_dataset, batch_size, shuffle = False,
+                             num_workers = num_workers, prefetch_factor = prefetch_factor)
 
     model = cfg["model_class"](trial, in_channels=in_channels, **cfg["model_kwargs"]).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=trial.suggest_float("lr", 1e-5, 1e-2, log = True))
@@ -278,9 +313,9 @@ def objective(trial):
     for epoch in range(max_epochs):
         model.train()
         train_loss = 0.0
-        for x_tss, x_tts, target in train_loader:
-            x_tss, x_tts = x_tss.to(device), x_tts.to(device)
-            y = target.to(device).unsqueeze(1)
+        for tss_parts, tts_parts, target in train_loader:
+            x_tss, x_tts, y = preprocess(tss_parts, tts_parts, target)
+            y = y.unsqueeze(1)
             optimizer.zero_grad()
             out = model(x_tss, x_tts)
             loss = criterion(out, y)
@@ -293,9 +328,9 @@ def objective(trial):
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
-            for x_tss, x_tts, target in val_loader:
-                x_tss, x_tts = x_tss.to(device), x_tts.to(device)
-                y = target.to(device).unsqueeze(1)
+            for tss_parts, tts_parts, target in val_loader:
+                x_tss, x_tts, y = preprocess(tss_parts, tts_parts, target)
+                y = y.unsqueeze(1)
                 out = model(x_tss, x_tts)
                 loss = criterion(out, y)
                 val_loss += loss.item() * x_tss.size(0)
@@ -355,6 +390,14 @@ def objective(trial):
         pt_path = os.path.join(CHECKPOINTS_DIR, pt_filename)
         torch.jit.save(torch.jit.script(ts_model), pt_path)
         print(f"Saved TorchScript model for trial {trial.number} as {pt_path}")
+
+    # Per-trial resource report (wall time includes data loading, training, validation, checkpointing)
+    n_epochs_run = len(train_loss_history)
+    trial_seconds = time.perf_counter() - trial_start_time
+    print(f"Trial {trial.number}: batch_size={batch_size}, {n_epochs_run} epochs in {trial_seconds:.1f} s "
+          f"({trial_seconds / max(n_epochs_run, 1):.1f} s/epoch)")
+    if torch.cuda.is_available():
+        print(f"Peak GPU memory: {torch.cuda.max_memory_allocated() / 2**30:.2f} GiB")
 
     return best_val_loss
 
