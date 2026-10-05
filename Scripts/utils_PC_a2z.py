@@ -4,7 +4,7 @@ import random
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader, BatchSampler, RandomSampler, SequentialSampler
 import optuna
 
 # ============================================================================
@@ -122,6 +122,146 @@ class DNADualDataset(Dataset):
             torch.tensor(tts_sample, dtype=torch.float32),
             torch.tensor(target, dtype=torch.float32),
         )
+
+# ============================================================================
+# 2.b Fast input pipeline: batch-level Dataset + GPU-side preprocessing
+# ============================================================================
+class DNADualBatchDataset(Dataset):
+    """
+    Batch-level counterpart of DNADualDataset.
+
+    __getitem__ receives a *list* of positions (one whole batch) and returns the
+    RAW, un-standardized, un-concatenated arrays for that batch. All arithmetic
+    (standardization) and the channel concatenation are done afterwards on the
+    GPU by BatchPreprocessor. Use it through make_loader(), which wires up the
+    batch sampler.
+
+    Works identically whether tss/tts/extra_* are np.memmap objects or ordinary
+    in-RAM np.ndarrays.
+
+    Returns:
+      tss_parts: tuple of 1 or 2 tensors, (B, C, P) and optionally (B, C_extra, P)
+      tts_parts: same for the TTS branch
+      target:    float32 tensor of shape (B,)
+
+    Note: indices are sorted within each batch (ascending file offsets -> better
+    read locality on a memmap). The same sorted order is used for inputs and
+    targets, so they stay aligned; for a sequential (non-shuffled) loader the
+    sort is a no-op and sample order is unchanged.
+    """
+    def __init__(self, indices, tss, tts, TPM, *, extra_tss=None, extra_tts=None):
+        self.indices   = np.asarray(indices)
+        self.tss       = tss
+        self.tts       = tts
+        self.TPM       = TPM
+        self.extra_tss = extra_tss
+        self.extra_tts = extra_tts
+
+    def __len__(self):
+        return len(self.indices)
+
+    @staticmethod
+    def _take(arr, real_idx):
+        # One fancy-indexing call = one copy of the whole batch out of the
+        # memmap / RAM array. np.ascontiguousarray strips the memmap subclass.
+        return torch.from_numpy(np.ascontiguousarray(arr[real_idx]))
+
+    def __getitem__(self, batch_idx):
+        real_idx = np.sort(self.indices[batch_idx])
+
+        tss_parts = [self._take(self.tss, real_idx)]
+        tts_parts = [self._take(self.tts, real_idx)]
+        if self.extra_tss is not None:
+            tss_parts.append(self._take(self.extra_tss, real_idx))
+        if self.extra_tts is not None:
+            tts_parts.append(self._take(self.extra_tts, real_idx))
+
+        target = torch.from_numpy(np.asarray(self.TPM[real_idx], dtype=np.float32))
+        return tuple(tss_parts), tuple(tts_parts), target
+
+
+class BatchPreprocessor:
+    """
+    Moves a raw batch from DNADualBatchDataset to `device` and performs there
+    exactly what DNADualDataset.__getitem__ does on the CPU:
+
+      1. standardize the base channels with the base mean/std,
+      2. standardize the extra channels with their own mean/std,
+      3. cast each part to float32,
+      4. concatenate base + extra along the channel dimension.
+
+    Each part is standardized in the dtype of its own statistics (float64 stats
+    -> float64 arithmetic, then rounded to float32), which is what NumPy does in
+    DNADualDataset, so the resulting float32 values are the same.
+    """
+    def __init__(
+        self, device,
+        tss_mean, tss_std, tts_mean, tts_std,
+        *,
+        extra_tss_mean=None, extra_tss_std=None,
+        extra_tts_mean=None, extra_tts_std=None,
+        standardize=True,
+    ):
+        self.device      = device
+        self.standardize = standardize
+
+        def _stat(a):
+            return torch.as_tensor(np.asarray(a)).to(device)
+
+        self.tss_stats = [(_stat(tss_mean), _stat(tss_std))]
+        self.tts_stats = [(_stat(tts_mean), _stat(tts_std))]
+        if extra_tss_mean is not None:
+            self.tss_stats.append((_stat(extra_tss_mean), _stat(extra_tss_std)))
+        if extra_tts_mean is not None:
+            self.tts_stats.append((_stat(extra_tts_mean), _stat(extra_tts_std)))
+
+    def _prep(self, parts, stats):
+        if len(parts) != len(stats):
+            raise ValueError(
+                f"Got {len(parts)} input part(s) but {len(stats)} set(s) of mean/std."
+            )
+        out = []
+        for x, (mean, std) in zip(parts, stats):
+            x = x.to(self.device, non_blocking=True)
+            if self.standardize:
+                x = (x - mean) / std
+            out.append(x.to(torch.float32))
+        return out[0] if len(out) == 1 else torch.cat(out, dim=1)
+
+    def __call__(self, tss_parts, tts_parts, target):
+        x_tss  = self._prep(tss_parts, self.tss_stats)
+        x_tts  = self._prep(tts_parts, self.tts_stats)
+        target = target.to(self.device, non_blocking=True)
+        return x_tss, x_tts, target
+
+
+def make_loader(dataset, batch_size, shuffle, num_workers=0, prefetch_factor=2):
+    """
+    Build a DataLoader that asks DNADualBatchDataset for one whole batch per call.
+
+    batch_size=None switches off the DataLoader's own per-sample collation; the
+    BatchSampler passed as `sampler` hands the dataset a list of positions.
+    The last, smaller batch is kept (same as the DataLoader default).
+
+    persistent_workers / prefetch_factor are only legal when num_workers > 0,
+    so they are only passed in that case. Workers are started with "fork" so the
+    memmaps (or in-RAM arrays) are inherited instead of being pickled.
+    """
+    base_sampler  = RandomSampler(dataset) if shuffle else SequentialSampler(dataset)
+    batch_sampler = BatchSampler(base_sampler, batch_size=batch_size, drop_last=False)
+    kwargs = dict(
+        sampler    = batch_sampler,
+        batch_size = None,
+        pin_memory = torch.cuda.is_available(),
+    )
+    if num_workers > 0:
+        kwargs.update(
+            num_workers             = num_workers,
+            persistent_workers      = True,
+            prefetch_factor         = prefetch_factor,
+            multiprocessing_context = "fork",
+        )
+    return DataLoader(dataset, **kwargs)
 
 # ============================================================================
 # 3. Model Definition
@@ -374,10 +514,14 @@ class TwoBranchCNN_OHE(nn.Module):
 # ============================================================================
 # 4. Evaluation Utility
 # ============================================================================
-def evaluate_model(model, dataloader, device, criterion):
+def evaluate_model(model, dataloader, device, criterion, preprocessor=None):
     """
     Evaluate the model on a DataLoader and return
     (average_loss, predictions_array).
+
+    preprocessor: None for a DataLoader over DNADualDataset (old behaviour), or
+    a BatchPreprocessor for a loader built with make_loader() over
+    DNADualBatchDataset.
     """
     model.eval()
     total_loss = 0.0
@@ -386,9 +530,13 @@ def evaluate_model(model, dataloader, device, criterion):
 
     with torch.no_grad():
         for x_tss, x_tts, target in dataloader:
-            x_tss = x_tss.to(device)
-            x_tts = x_tts.to(device)
-            target = target.to(device).unsqueeze(1)
+            if preprocessor is not None:
+                x_tss, x_tts, target = preprocessor(x_tss, x_tts, target)
+                target = target.unsqueeze(1)
+            else:
+                x_tss = x_tss.to(device)
+                x_tts = x_tts.to(device)
+                target = target.to(device).unsqueeze(1)
 
             output = model(x_tss, x_tts)
             loss = criterion(output, target)
