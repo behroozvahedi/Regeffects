@@ -22,6 +22,9 @@ from utils_PC_a2z import (
     DNADualBatchDataset,
     BatchPreprocessor,
     make_loader,
+    set_batch_size,
+    raise_open_file_limit,
+    process_resource_report,
     TwoBranchCNN,
     TwoBranchCNN_OHE,
     EMPRES_CONFIG,
@@ -90,6 +93,8 @@ print(f"Checkpoints will be saved under subdir: {cfg['subdir']}")
 print(f"Data loading: {'in RAM' if in_ram else 'memory-mapped'}, num_workers={num_workers}"
       + (f", prefetch_factor={prefetch_factor}" if num_workers > 0 else "")
       + f", CPUs available to this job: {len(os.sched_getaffinity(0))}")
+_old_soft, _new_soft, _hard = raise_open_file_limit()
+print(f"Open-file limit of this process: soft {_old_soft} -> {_new_soft} (hard limit {_hard})")
 print("Early stopping: patience=10 epochs, min_improvement=0.01 (a new best is recorded only if val_loss drops by at least 0.01)")
 
 # Canonical CV fold numbering used throughout the project:
@@ -280,6 +285,19 @@ preprocess = BatchPreprocessor(
 )
 
 # ============================================================================
+# 7.b DataLoaders: created ONCE for the whole study and reused by every trial
+# ============================================================================
+# The worker processes and the pin-memory threads are started a single time here.
+# Each trial only changes the batch size (set_batch_size) of these two loaders.
+# Building new loaders inside every trial made the number of open files of the
+# process grow trial after trial until it hit the system limit ("Too many open files").
+INITIAL_BATCH_SIZE = 64   # placeholder; every trial sets its own batch size before its first epoch
+train_loader = make_loader(train_dataset, INITIAL_BATCH_SIZE, shuffle = True,
+                           num_workers = num_workers, prefetch_factor = prefetch_factor)
+val_loader   = make_loader(val_dataset, INITIAL_BATCH_SIZE, shuffle = False,
+                           num_workers = num_workers, prefetch_factor = prefetch_factor)
+
+# ============================================================================
 # 8. Define the Objective Function for Optuna with Early Stopping
 # ============================================================================
 def objective(trial):
@@ -288,14 +306,10 @@ def objective(trial):
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
 
-    # DataLoaders for this trial
+    # Batch size for this trial: applied to the two shared loaders (no new loaders are created)
     batch_size = trial.suggest_categorical("batch_size", [64, 128, 256])
-    
-    train_loader = make_loader(train_dataset, batch_size, shuffle = True,
-                               num_workers = num_workers, prefetch_factor = prefetch_factor)
-
-    val_loader = make_loader(val_dataset, batch_size, shuffle = False,
-                             num_workers = num_workers, prefetch_factor = prefetch_factor)
+    set_batch_size(train_loader, batch_size)
+    set_batch_size(val_loader, batch_size)
 
     model = cfg["model_class"](trial, in_channels=in_channels, **cfg["model_kwargs"]).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=trial.suggest_float("lr", 1e-5, 1e-2, log = True))
@@ -398,6 +412,8 @@ def objective(trial):
           f"({trial_seconds / max(n_epochs_run, 1):.1f} s/epoch)")
     if torch.cuda.is_available():
         print(f"Peak GPU memory: {torch.cuda.max_memory_allocated() / 2**30:.2f} GiB")
+    # These numbers must stay flat from trial to trial
+    print(f"Main process: {process_resource_report()}")
 
     return best_val_loss
 
