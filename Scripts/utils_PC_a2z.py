@@ -1,10 +1,11 @@
 # utils.py
 
+import os
 import random
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader, BatchSampler, RandomSampler, SequentialSampler
+from torch.utils.data import Dataset, DataLoader, Sampler, RandomSampler, SequentialSampler
 import optuna
 
 # ============================================================================
@@ -235,20 +236,54 @@ class BatchPreprocessor:
         return x_tss, x_tts, target
 
 
+class AdjustableBatchSampler(Sampler):
+    """
+    Groups the indices produced by `sampler` into lists of `batch_size`
+    (the last, smaller batch is kept).
+
+    Unlike torch's BatchSampler, the batch size is meant to be changed between
+    epochs with set_batch_size(). The sampler lives in the main process and is
+    re-read at the start of every epoch, so ONE DataLoader (one set of worker
+    processes, one pin-memory thread) can serve every Optuna trial, whatever
+    batch size the trial uses.
+    """
+    def __init__(self, sampler, batch_size):
+        self.sampler    = sampler
+        self.batch_size = int(batch_size)
+
+    def __iter__(self):
+        batch_size = self.batch_size          # fixed for the whole epoch
+        batch = []
+        for idx in self.sampler:
+            batch.append(idx)
+            if len(batch) == batch_size:
+                yield batch
+                batch = []
+        if batch:
+            yield batch
+
+    def __len__(self):
+        return (len(self.sampler) + self.batch_size - 1) // self.batch_size
+
+
 def make_loader(dataset, batch_size, shuffle, num_workers=0, prefetch_factor=2):
     """
     Build a DataLoader that asks DNADualBatchDataset for one whole batch per call.
 
+    IMPORTANT: build each loader ONCE per job and reuse it for all trials; use
+    set_batch_size(loader, n) to change the batch size between trials. Creating
+    new loaders (new worker processes + pin-memory threads) for every trial made
+    the number of open files grow until the job hit the per-process limit.
+
     batch_size=None switches off the DataLoader's own per-sample collation; the
-    BatchSampler passed as `sampler` hands the dataset a list of positions.
-    The last, smaller batch is kept (same as the DataLoader default).
+    AdjustableBatchSampler passed as `sampler` hands the dataset a list of positions.
 
     persistent_workers / prefetch_factor are only legal when num_workers > 0,
     so they are only passed in that case. Workers are started with "fork" so the
     memmaps (or in-RAM arrays) are inherited instead of being pickled.
     """
     base_sampler  = RandomSampler(dataset) if shuffle else SequentialSampler(dataset)
-    batch_sampler = BatchSampler(base_sampler, batch_size=batch_size, drop_last=False)
+    batch_sampler = AdjustableBatchSampler(base_sampler, batch_size)
     kwargs = dict(
         sampler    = batch_sampler,
         batch_size = None,
@@ -262,6 +297,73 @@ def make_loader(dataset, batch_size, shuffle, num_workers=0, prefetch_factor=2):
             multiprocessing_context = "fork",
         )
     return DataLoader(dataset, **kwargs)
+
+
+def set_batch_size(loader, batch_size):
+    """
+    Change the batch size of a loader built with make_loader(). Takes effect at
+    the next epoch (the next `for ... in loader`); call it between epochs only,
+    i.e. at the start of a trial.
+    """
+    if not isinstance(loader.sampler, AdjustableBatchSampler):
+        raise TypeError("set_batch_size() needs a loader built with make_loader().")
+    loader.sampler.batch_size = int(batch_size)
+
+
+def raise_open_file_limit():
+    """
+    Raise this process's soft limit on open files to the hard limit (what
+    `ulimit -n` shows is the soft limit, often only 1024). DataLoader workers hand
+    every tensor to the main process through a file descriptor, so they need
+    headroom. Returns (old_soft, new_soft, hard).
+    """
+    import resource
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    new_soft = soft
+    if hard == resource.RLIM_INFINITY or soft < hard:
+        target = 1048576 if hard == resource.RLIM_INFINITY else hard
+        try:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
+            new_soft = target
+        except (ValueError, OSError):
+            pass
+    return soft, new_soft, hard
+
+
+def process_resource_report():
+    """
+    One-line summary of what the main process currently holds: open files (by
+    kind), live child processes, and threads. Printed once per trial; every
+    number should stay flat from trial to trial.
+    """
+    import multiprocessing, threading, collections
+    kinds = collections.Counter()
+    try:
+        fd_names = os.listdir("/proc/self/fd")
+    except OSError:
+        return "open files: n/a"
+    for fd in fd_names:
+        try:
+            target = os.readlink(f"/proc/self/fd/{fd}")
+        except OSError:
+            continue
+        if target.startswith("pipe:"):
+            kinds["pipes"] += 1
+        elif target.startswith("socket:"):
+            kinds["sockets"] += 1
+        elif "nvidia" in target:
+            kinds["nvidia"] += 1
+        elif target.startswith("/dev/shm") or "torch_" in target:
+            kinds["shared-mem"] += 1
+        elif target.startswith("anon_inode:"):
+            kinds["anon"] += 1
+        else:
+            kinds["files"] += 1
+    total  = sum(kinds.values())
+    detail = ", ".join(f"{k} {v}" for k, v in sorted(kinds.items()))
+    return (f"open files: {total} ({detail}) | "
+            f"child processes: {len(multiprocessing.active_children())} | "
+            f"threads: {threading.active_count()}")
 
 # ============================================================================
 # 3. Model Definition
