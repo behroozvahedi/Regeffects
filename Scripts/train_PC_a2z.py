@@ -23,6 +23,9 @@ from utils_PC_a2z import (
     BatchPreprocessor,
     make_loader,
     set_batch_size,
+    GPUResidentLoader,
+    gpu_resident_bytes,
+    check_gpu_capacity,
     raise_open_file_limit,
     process_resource_report,
     TwoBranchCNN,
@@ -76,6 +79,12 @@ parser.add_argument(
     "--in_ram", action="store_true",
     help="Read the input arrays fully into RAM instead of memory-mapping them"
 )
+parser.add_argument(
+    "--data_on_gpu", action="store_true",
+    help="Copy the standardized training and validation data to the GPU once and train "
+         "without a DataLoader (--num_workers/--prefetch_factor/--in_ram are then ignored). "
+         "Needs enough GPU memory for both splits."
+)
 
 args = parser.parse_args()
 data_dir = args.data_dir
@@ -86,13 +95,20 @@ EMPRES_type = args.EMPRES_type
 num_workers = args.num_workers
 prefetch_factor = args.prefetch_factor
 in_ram = args.in_ram
+data_on_gpu = args.data_on_gpu
 cfg = EMPRES_CONFIG[EMPRES_type]
 print(f"Reading input data from: {data_dir}")
 print(f"\nUsing validation group: {val_group} and test group: {test_group}, EMPRES_type: {EMPRES_type}")
 print(f"Checkpoints will be saved under subdir: {cfg['subdir']}")
-print(f"Data loading: {'in RAM' if in_ram else 'memory-mapped'}, num_workers={num_workers}"
-      + (f", prefetch_factor={prefetch_factor}" if num_workers > 0 else "")
-      + f", CPUs available to this job: {len(os.sched_getaffinity(0))}")
+if data_on_gpu:
+    in_ram = False          # the files are only read once, straight through a memory map
+    num_workers = 0         # no DataLoader, so no worker processes
+    print(f"Data loading: GPU-resident (--data_on_gpu), no DataLoader; "
+          f"CPUs available to this job: {len(os.sched_getaffinity(0))}")
+else:
+    print(f"Data loading: {'in RAM' if in_ram else 'memory-mapped'}, num_workers={num_workers}"
+          + (f", prefetch_factor={prefetch_factor}" if num_workers > 0 else "")
+          + f", CPUs available to this job: {len(os.sched_getaffinity(0))}")
 _old_soft, _new_soft, _hard = raise_open_file_limit()
 print(f"Open-file limit of this process: soft {_old_soft} -> {_new_soft} (hard limit {_hard})")
 print("Early stopping: patience=10 epochs, min_improvement=0.01 (a new best is recorded only if val_loss drops by at least 0.01)")
@@ -285,17 +301,50 @@ preprocess = BatchPreprocessor(
 )
 
 # ============================================================================
-# 7.b DataLoaders: created ONCE for the whole study and reused by every trial
+# 7.b Batch sources: created ONCE for the whole study and reused by every trial
 # ============================================================================
-# The worker processes and the pin-memory threads are started a single time here.
-# Each trial only changes the batch size (set_batch_size) of these two loaders.
-# Building new loaders inside every trial made the number of open files of the
-# process grow trial after trial until it hit the system limit ("Too many open files").
+# Each trial only changes the batch size (set_batch_size) of these two objects.
 INITIAL_BATCH_SIZE = 64   # placeholder; every trial sets its own batch size before its first epoch
-train_loader = make_loader(train_dataset, INITIAL_BATCH_SIZE, shuffle = True,
-                           num_workers = num_workers, prefetch_factor = prefetch_factor)
-val_loader   = make_loader(val_dataset, INITIAL_BATCH_SIZE, shuffle = False,
-                           num_workers = num_workers, prefetch_factor = prefetch_factor)
+n_train, n_val = len(train_idx), len(val_idx)
+
+if data_on_gpu:
+    # --- GPU-resident data: both splits are standardized, concatenated and copied
+    #     to the GPU here, once. Training then needs no disk, host RAM or workers.
+    if device.type != "cuda":
+        print("WARNING: --data_on_gpu was given but no GPU is available; the data will be held in host RAM instead.")
+    n_positions = tss.shape[2]
+    needed_bytes = (gpu_resident_bytes(n_train, in_channels, n_positions)
+                    + gpu_resident_bytes(n_val, in_channels, n_positions))
+    free_bytes, total_bytes = check_gpu_capacity(device, needed_bytes)
+    print(f"GPU-resident data: need {needed_bytes / 2**30:.1f} GiB for train + validation"
+          + (f"; GPU has {free_bytes / 2**30:.1f} GiB free of {total_bytes / 2**30:.1f} GiB" if free_bytes is not None else ""))
+    _load_start = time.perf_counter()
+    train_loader = GPUResidentLoader(train_idx, tss, tts, TPM, preprocess,
+                                     extra_tss = extra_tss, extra_tts = extra_tts,
+                                     batch_size = INITIAL_BATCH_SIZE, shuffle = True, name = "train")
+    print(f"  train split on device: {train_loader.nbytes() / 2**30:.1f} GiB, "
+          f"x_tss {tuple(train_loader.x_tss.shape)} ({time.perf_counter() - _load_start:.0f} s)")
+    val_loader   = GPUResidentLoader(val_idx, tss, tts, TPM, preprocess,
+                                     extra_tss = extra_tss, extra_tts = extra_tts,
+                                     batch_size = INITIAL_BATCH_SIZE, shuffle = False, name = "validation")
+    print(f"  validation split on device: {val_loader.nbytes() / 2**30:.1f} GiB, "
+          f"x_tss {tuple(val_loader.x_tss.shape)} (total load time {time.perf_counter() - _load_start:.0f} s)")
+    if device.type == "cuda":
+        print(f"  GPU memory allocated after loading: {torch.cuda.memory_allocated() / 2**30:.1f} GiB")
+
+    def prepare_batch(x_tss, x_tts, target):
+        # Batches are already standardized, concatenated and on the device
+        return x_tss, x_tts, target
+else:
+    # --- DataLoader path: the worker processes and the pin-memory threads are started
+    #     a single time here. (Building new loaders inside every trial made the number of
+    #     open files grow trial after trial until it hit the limit: "Too many open files".)
+    train_loader = make_loader(train_dataset, INITIAL_BATCH_SIZE, shuffle = True,
+                               num_workers = num_workers, prefetch_factor = prefetch_factor)
+    val_loader   = make_loader(val_dataset, INITIAL_BATCH_SIZE, shuffle = False,
+                               num_workers = num_workers, prefetch_factor = prefetch_factor)
+    # Standardize + concatenate each raw batch on the GPU
+    prepare_batch = preprocess
 
 # ============================================================================
 # 8. Define the Objective Function for Optuna with Early Stopping
@@ -306,7 +355,7 @@ def objective(trial):
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
 
-    # Batch size for this trial: applied to the two shared loaders (no new loaders are created)
+    # Batch size for this trial: applied to the two shared batch sources (nothing new is created)
     batch_size = trial.suggest_categorical("batch_size", [64, 128, 256])
     set_batch_size(train_loader, batch_size)
     set_batch_size(val_loader, batch_size)
@@ -325,30 +374,33 @@ def objective(trial):
     val_loss_history = []
 
     for epoch in range(max_epochs):
+        # The running loss sums are kept on the GPU (in float64) and read back once
+        # per epoch. Calling loss.item() on every step would make the CPU wait for
+        # the GPU after each batch; the summed values are exactly the same.
         model.train()
-        train_loss = 0.0
-        for tss_parts, tts_parts, target in train_loader:
-            x_tss, x_tts, y = preprocess(tss_parts, tts_parts, target)
+        train_loss_sum = torch.zeros((), dtype=torch.float64, device=device)
+        for batch_tss, batch_tts, target in train_loader:
+            x_tss, x_tts, y = prepare_batch(batch_tss, batch_tts, target)
             y = y.unsqueeze(1)
             optimizer.zero_grad()
             out = model(x_tss, x_tts)
             loss = criterion(out, y)
             loss.backward()
             optimizer.step()
-            train_loss += loss.item() * x_tss.size(0)
-        train_loss /= len(train_loader.dataset)
+            train_loss_sum += loss.detach().double() * x_tss.size(0)
+        train_loss = train_loss_sum.item() / n_train
         train_loss_history.append(train_loss)
 
         model.eval()
-        val_loss = 0.0
+        val_loss_sum = torch.zeros((), dtype=torch.float64, device=device)
         with torch.no_grad():
-            for tss_parts, tts_parts, target in val_loader:
-                x_tss, x_tts, y = preprocess(tss_parts, tts_parts, target)
+            for batch_tss, batch_tts, target in val_loader:
+                x_tss, x_tts, y = prepare_batch(batch_tss, batch_tts, target)
                 y = y.unsqueeze(1)
                 out = model(x_tss, x_tts)
                 loss = criterion(out, y)
-                val_loss += loss.item() * x_tss.size(0)
-        val_loss /= len(val_loader.dataset)
+                val_loss_sum += loss.double() * x_tss.size(0)
+        val_loss = val_loss_sum.item() / n_val
         val_loss_history.append(val_loss)
         rmse = val_loss ** 0.5
 
@@ -411,7 +463,8 @@ def objective(trial):
     print(f"Trial {trial.number}: batch_size={batch_size}, {n_epochs_run} epochs in {trial_seconds:.1f} s "
           f"({trial_seconds / max(n_epochs_run, 1):.1f} s/epoch)")
     if torch.cuda.is_available():
-        print(f"Peak GPU memory: {torch.cuda.max_memory_allocated() / 2**30:.2f} GiB")
+        print(f"Peak GPU memory: {torch.cuda.max_memory_allocated() / 2**30:.2f} GiB"
+              + (" (includes the GPU-resident data)" if data_on_gpu else ""))
     # These numbers must stay flat from trial to trial
     print(f"Main process: {process_resource_report()}")
 
