@@ -301,13 +301,125 @@ def make_loader(dataset, batch_size, shuffle, num_workers=0, prefetch_factor=2):
 
 def set_batch_size(loader, batch_size):
     """
-    Change the batch size of a loader built with make_loader(). Takes effect at
-    the next epoch (the next `for ... in loader`); call it between epochs only,
-    i.e. at the start of a trial.
+    Change the batch size of a loader built with make_loader() or of a
+    GPUResidentLoader. Takes effect at the next epoch (the next
+    `for ... in loader`); call it between epochs only, i.e. at the start of a trial.
     """
+    if isinstance(loader, GPUResidentLoader):
+        loader.batch_size = int(batch_size)
+        return
     if not isinstance(loader.sampler, AdjustableBatchSampler):
-        raise TypeError("set_batch_size() needs a loader built with make_loader().")
+        raise TypeError("set_batch_size() needs a loader built with make_loader() or a GPUResidentLoader.")
     loader.sampler.batch_size = int(batch_size)
+
+
+# ============================================================================
+# 2.c GPU-resident data: the whole split lives on the GPU, no DataLoader at all
+# ============================================================================
+def gpu_resident_bytes(n_rows, n_channels, n_positions):
+    """Bytes needed on the device for ONE split: two float32 branches (tss, tts) plus targets."""
+    return 2 * n_rows * n_channels * n_positions * 4 + n_rows * 4
+
+
+class GPUResidentLoader:
+    """
+    Holds one whole split (train or validation) on `device`, already standardized
+    and channel-concatenated as float32, and serves batches by indexing those
+    tensors on the device.
+
+    Why: with a DataLoader, every batch is read from host RAM / disk by worker
+    processes, handed to the main process, pinned and copied to the GPU. For a
+    small model that delivery is the bottleneck, and it depends on the node's
+    RAM and disk staying responsive. Here the data are copied to the GPU ONCE,
+    when the loader is built; after that an epoch touches neither the disk, the
+    host RAM, nor any worker process.
+
+    The values are produced by the SAME BatchPreprocessor as the DataLoader path
+    (chunk by chunk), so every sample is bit-identical to what that path feeds
+    the model.
+
+    Iterating yields (x_tss, x_tts, target), all on `device`:
+      x_tss, x_tts: float32, shape (B, C_total, P)
+      target:       float32, shape (B,)
+    The last, smaller batch is kept. With shuffle=True a new random permutation
+    is drawn every epoch.
+
+    Args:
+      indices:       sample indices of this split (rows of the arrays on disk).
+      tss, tts, TPM: arrays (memmap or in RAM) as for DNADualBatchDataset.
+      preprocessor:  a BatchPreprocessor built for `device`.
+      batch_size:    initial batch size (change it with set_batch_size()).
+      shuffle:       True for the training split, False for validation.
+      chunk_rows:    rows copied to the device per step while loading.
+    """
+    def __init__(self, indices, tss, tts, TPM, preprocessor, *,
+                 extra_tss=None, extra_tts=None,
+                 batch_size=64, shuffle=False, chunk_rows=4096, name="split"):
+        self.device     = preprocessor.device
+        self.batch_size = int(batch_size)
+        self.shuffle    = shuffle
+        self.name       = name
+
+        indices = np.sort(np.asarray(indices))      # ascending = sequential read of the files
+        self.num_samples = n = len(indices)
+        if n == 0:
+            raise ValueError(f"GPUResidentLoader({name}): the split is empty.")
+
+        raw = DNADualBatchDataset(indices, tss, tts, TPM, extra_tss=extra_tss, extra_tts=extra_tts)
+        self.x_tss = self.x_tts = self.target = None
+        with torch.no_grad():
+            for start in range(0, n, chunk_rows):
+                stop = min(start + chunk_rows, n)
+                tss_parts, tts_parts, target = raw[np.arange(start, stop)]
+                x_tss, x_tts, target = preprocessor(tss_parts, tts_parts, target)
+                if self.x_tss is None:
+                    # Allocate the full tensors once, sized from the first chunk
+                    self.x_tss  = torch.empty((n,) + tuple(x_tss.shape[1:]), dtype=torch.float32, device=self.device)
+                    self.x_tts  = torch.empty((n,) + tuple(x_tts.shape[1:]), dtype=torch.float32, device=self.device)
+                    self.target = torch.empty((n,), dtype=torch.float32, device=self.device)
+                self.x_tss[start:stop]  = x_tss
+                self.x_tts[start:stop]  = x_tts
+                self.target[start:stop] = target
+                del x_tss, x_tts, target, tss_parts, tts_parts
+
+    def nbytes(self):
+        return sum(t.numel() * t.element_size() for t in (self.x_tss, self.x_tts, self.target))
+
+    def __len__(self):
+        return (self.num_samples + self.batch_size - 1) // self.batch_size
+
+    def __iter__(self):
+        n, batch_size = self.num_samples, self.batch_size      # fixed for the whole epoch
+        if self.shuffle:
+            perm = torch.randperm(n, device=self.device)
+            for start in range(0, n, batch_size):
+                idx = perm[start:start + batch_size]
+                yield (self.x_tss.index_select(0, idx),
+                       self.x_tts.index_select(0, idx),
+                       self.target.index_select(0, idx))
+        else:
+            for start in range(0, n, batch_size):
+                stop = start + batch_size
+                yield self.x_tss[start:stop], self.x_tts[start:stop], self.target[start:stop]
+
+
+def check_gpu_capacity(device, needed_bytes, headroom_bytes=8 * 2**30):
+    """
+    Raise a clear error BEFORE loading if the data (plus headroom for the model,
+    its activations and the loading chunks) cannot fit on the device.
+    Returns (free_bytes, total_bytes); (None, None) on a CPU device.
+    """
+    if torch.device(device).type != "cuda":
+        return None, None
+    free_bytes, total_bytes = torch.cuda.mem_get_info(device)
+    if needed_bytes + headroom_bytes > free_bytes:
+        raise RuntimeError(
+            f"--data_on_gpu: the data need {needed_bytes / 2**30:.1f} GiB "
+            f"(+ {headroom_bytes / 2**30:.0f} GiB headroom) but only {free_bytes / 2**30:.1f} GiB "
+            f"of {total_bytes / 2**30:.1f} GiB are free on this GPU. "
+            f"Run without --data_on_gpu (DataLoader path) or use a GPU with more memory."
+        )
+    return free_bytes, total_bytes
 
 
 def raise_open_file_limit():
