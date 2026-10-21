@@ -66,6 +66,10 @@ cfg = EMPRES_CONFIG[EMPRES_type]
 print(f"Reading input data from: {data_dir}")
 print(f"\nUsing validation group: {val_group}, test group: {test_group}, EMPRES_type: {EMPRES_type}")
 
+# Canonical CV fold numbering (same as train_PC_a2z.py): fold 1: val1_test2, ..., fold 5: val5_test1
+FOLD_NUMBER = {(1, 2): 1, (2, 3): 2, (3, 4): 3, (4, 5): 4, (5, 1): 5}
+fold_num = FOLD_NUMBER.get((int(val_group), int(test_group)))
+
 # ============================================================================
 # 3. Define Paths and Directories
 # ============================================================================
@@ -219,11 +223,40 @@ all_predictions = []
 test_loss_list = []
 criterion = torch.nn.MSELoss()
 
+# One row per top-X model plus one ensemble row; written to a TSV file in the run directory
+results_rows = []
+# e.g. test_results_EMPRES_1_fold_1.tsv (fold 1 = val1_test2); a non-standard val/test pair is named by its groups.
+# top_x is not in the name (it is a column in the file): a rerun with another --top_x overwrites the file.
+fold_tag = f"fold_{fold_num}" if fold_num is not None else f"val{val_group}_test{test_group}"
+TEST_RESULTS_TSV = os.path.join(CHECKPOINTS_DIR, f"test_results_EMPRES_{EMPRES_type}_{fold_tag}.tsv")
+
+def result_row(rank, checkpoint_file, trial_number, status, recorded_val_loss=None,
+               replicated_val_loss=None, test_loss=None, n_models_in_ensemble=None):
+    return {
+        "EMPRES_type": EMPRES_type, "fold": fold_num, "val_group": val_group, "test_group": test_group,
+        "top_x": top_x, "rank": rank, "checkpoint_file": checkpoint_file, "trial_number": trial_number,
+        "status": status, "recorded_val_loss": recorded_val_loss, "replicated_val_loss": replicated_val_loss,
+        "test_loss": test_loss, "n_val": len(val_idx), "n_test": len(test_idx),
+        "n_models_in_ensemble": n_models_in_ensemble,
+    }
+
+def save_test_results(rows):
+    # Write to a temporary name first, then rename, so a crash never leaves a half-written file
+    tmp_path = TEST_RESULTS_TSV + ".tmp"
+    df_out = pd.DataFrame(rows)
+    for col in ("fold", "trial_number", "n_models_in_ensemble"):   # integers, empty where not applicable
+        df_out[col] = df_out[col].astype("Int64")
+    df_out.to_csv(tmp_path, sep="\t", index=False)
+    os.replace(tmp_path, TEST_RESULTS_TSV)
+    print(f"Test results saved to {TEST_RESULTS_TSV}")
+
 for idx, row in top_trials.iterrows():
     checkpoint_file = row["checkpoint_file"].strip()
     checkpoint_path = os.path.join(CHECKPOINTS_DIR, checkpoint_file)
     if not os.path.exists(checkpoint_path):
         print(f"Error: checkpoint not found: {checkpoint_path}")
+        results_rows.append(result_row(idx + 1, checkpoint_file, int(row["trial_number"]), "checkpoint not found",
+                                       recorded_val_loss=float(row["val_loss"])))
         continue
 
     print(f"\nLoading model from: {checkpoint_path}")
@@ -263,12 +296,16 @@ for idx, row in top_trials.iterrows():
 
     test_loss_list.append(test_loss)
     all_predictions.append(predictions.squeeze())
+    results_rows.append(result_row(idx + 1, checkpoint_file, int(row["trial_number"]), "evaluated",
+                                   recorded_val_loss=float(row["val_loss"]),
+                                   replicated_val_loss=val_loss, test_loss=test_loss))
 
 # ============================================================================
 # 10. Ensemble Predictions
 # ============================================================================
 if not all_predictions:
     print("No predictions were generated. Exiting.")
+    save_test_results(results_rows)
     exit(1)
 
 pred_stack = np.stack(all_predictions, axis=0)
@@ -278,6 +315,11 @@ observed = torch.tensor(TPM[test_idx], dtype=torch.float32, device=device)
 ensemble = torch.tensor(ensemble_pred, dtype=torch.float32, device=device)
 ensemble_loss = torch.nn.functional.mse_loss(ensemble, observed).item()
 print(f"\nEnsemble test loss: {ensemble_loss:.6f}")
+
+evaluated_files = [r["checkpoint_file"] for r in results_rows if r["status"] == "evaluated"]
+results_rows.append(result_row("ensemble", ",".join(evaluated_files), None, "evaluated",
+                               test_loss=ensemble_loss, n_models_in_ensemble=len(all_predictions)))
+save_test_results(results_rows)
 
 if __name__ == "__main__":
     pass
