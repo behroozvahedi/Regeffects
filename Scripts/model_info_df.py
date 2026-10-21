@@ -44,9 +44,12 @@ CHECKPOINTS_DIR = os.path.join(
 # trial checkpoints are named like "checkpoint_trial_*.pth"
 checkpoint_pattern = os.path.join(CHECKPOINTS_DIR, "checkpoint_trial_*.pth")
 checkpoint_files = glob.glob(checkpoint_pattern)
+if not checkpoint_files:
+    raise FileNotFoundError(f"No checkpoint files matching {checkpoint_pattern} (check --out_dir, --val_group, --test_group, --EMPRES_type)")
 
 # List to hold information from each checkpoint.
 trial_info_list = []
+failed_files = []   # checkpoints that could not be read: the CSV is NOT written if any fail
 
 for file in checkpoint_files:
     try:
@@ -71,6 +74,15 @@ for file in checkpoint_files:
         trial_info_list.append(trial_info)
     except Exception as e:
         print(f"Error loading {file}: {e}")
+        failed_files.append(os.path.basename(file))
+
+if failed_files:
+    raise RuntimeError(
+        f"{len(failed_files)} of {len(checkpoint_files)} checkpoint(s) could not be loaded: {sorted(failed_files)}. "
+        f"trial_results.csv was NOT written (an existing one in {CHECKPOINTS_DIR} is from an earlier run). "
+        f"Re-copy or regenerate these checkpoints and rerun."
+    )
+print(f"Loaded {len(trial_info_list)} checkpoint(s) from {CHECKPOINTS_DIR}")
 
 # Create a DataFrame from the collected trial information.
 df_trials = pd.DataFrame(trial_info_list)
