@@ -40,6 +40,15 @@ CLI mirrors test_PC_a2z.py, generate_predictions.py, and model_info_df.py:
                     log10_1p (predictions in linear TPM).
     --metrics_file  (Optional) Path of the metrics TSV. Default:
                     <save_dir>/cv_metrics_EMPRES_<types>[_with_PhytoExpr].tsv
+    --no_merged     (Optional) Do not write the merged prediction files. By default, with
+                    --npy_dir and more than one EMPRES type or PhytoExpr, the script writes
+                      <save_dir>/predictions_merged_EMPRES_<types>.csv
+                          all genes, one ensemble column per EMPRES type;
+                      <save_dir>/predictions_merged_EMPRES_<types>_with_PhytoExpr.csv
+                          the genes shared with PhytoExpr, plus PhytoExpr_B / PhytoExpr_C.
+                    Both have the columns gene, species, family, group, observed_TPM and one
+                    column per model, i.e. exactly the rows and values the comparison metrics
+                    were computed from.
 """
 import os
 import argparse
@@ -318,6 +327,8 @@ def main():
     parser.add_argument("--phyto_pred_transform", choices=["none", "log10_1p"], default="none",
                         help="none: PhytoExpr predictions already in log10(1+TPM); log10_1p: they are linear TPM.")
     parser.add_argument("--metrics_file", type=str, default=None, help="Path of the metrics TSV.")
+    parser.add_argument("--no_merged", action="store_true",
+                        help="Do not write predictions_merged_EMPRES_<types>[_with_PhytoExpr].csv.")
     args = parser.parse_args()
 
     out_dir = args.out_dir
@@ -328,8 +339,9 @@ def main():
     if phyto_files and args.npy_dir is None:
         parser.error("--phyto_B_file / --phyto_C_file need --npy_dir (species is required for the merge).")
     os.makedirs(save_dir, exist_ok=True)
+    types_str = "_".join(map(str, types))
     metrics_file = args.metrics_file or os.path.join(
-        save_dir, f"cv_metrics_EMPRES_{'_'.join(map(str, types))}"
+        save_dir, f"cv_metrics_EMPRES_{types_str}"
                   f"{'_with_PhytoExpr' if phyto_files else ''}.tsv")
 
     npy, species_order = None, []
@@ -366,16 +378,30 @@ def main():
         keys = ["gene", "species"]
         wide = None
         for t in types:
-            d = per_type[t][keys + ["observed_TPM", "ensemble_pred"]].rename(
-                columns={"ensemble_pred": f"EMPRES_{t}", "observed_TPM": f"obs_{t}"})
+            d = per_type[t][keys + ["family", "group", "observed_TPM", "ensemble_pred"]].rename(
+                columns={"ensemble_pred": f"EMPRES_{t}", "observed_TPM": f"obs_{t}",
+                         "family": f"family_{t}", "group": f"group_{t}"})
             wide = d if wide is None else wide.merge(d, on=keys, how="inner", validate="one_to_one")
+        # family and group (test fold) must agree between types; keep one copy of each
+        for col in ("family", "group"):
+            cols = [f"{col}_{t}" for t in types]
+            same = (wide[cols].astype(str).to_numpy() == wide[[cols[0]]].astype(str).to_numpy()).all()
+            if not same:
+                raise ValueError(f"'{col}' differs between EMPRES types for the same (gene, species).")
+            wide = wide.rename(columns={cols[0]: col}).drop(columns=cols[1:])
         obs_cols = [f"obs_{t}" for t in types]
         max_obs_diff = float(np.nanmax(np.abs(wide[obs_cols].to_numpy() - wide[[obs_cols[0]]].to_numpy())))
         if max_obs_diff > 1e-6:
             raise ValueError(f"observed_TPM differs between EMPRES types (max |diff| {max_obs_diff:.3g}).")
         wide = wide.rename(columns={obs_cols[0]: "observed_TPM"}).drop(columns=obs_cols[1:])
         empres_models = [f"EMPRES_{t}" for t in types]
+        base_cols = ["gene", "species", "family", "group", "observed_TPM"]
+        wide = wide[base_cols + empres_models]
         print(f"\nGenes with predictions from all {len(types)} EMPRES type(s): {len(wide):,}")
+        if not args.no_merged and len(types) > 1:
+            merged_csv = os.path.join(save_dir, f"predictions_merged_EMPRES_{types_str}.csv")
+            wide.to_csv(merged_csv, index=False)
+            print(f"Saved merged EMPRES predictions ({len(wide):,} rows) to: {merged_csv}")
 
         if len(types) > 1:
             compare(wide, empres_models, "EMPRES_all", species_order, records)
@@ -390,9 +416,15 @@ def main():
                       f"{int((m['_merge'] == 'left_only').sum()):,} EMPRES genes without a {lab} prediction; "
                       f"{int((m['_merge'] == 'right_only').sum()):,} {lab} rows without an EMPRES prediction")
                 wide = wide.merge(ph, on=keys, how="inner", validate="one_to_one")
-            wide = wide[np.isfinite(wide[[lab for lab, _ in phyto_files]]).all(axis=1)]
+            phyto_models = [lab for lab, _ in phyto_files]
+            wide = wide[np.isfinite(wide[phyto_models]).all(axis=1)]
+            wide = wide[base_cols + phyto_models + empres_models]
             print(f"\nGenes shared by all models: {len(wide):,} of {n_before:,}")
-            compare(wide, [lab for lab, _ in phyto_files] + empres_models,
+            if not args.no_merged:
+                merged_csv = os.path.join(save_dir, f"predictions_merged_EMPRES_{types_str}_with_PhytoExpr.csv")
+                wide.to_csv(merged_csv, index=False)
+                print(f"Saved merged EMPRES + PhytoExpr predictions ({len(wide):,} rows) to: {merged_csv}")
+            compare(wide, phyto_models + empres_models,
                     "shared_with_PhytoExpr", species_order, records)
 
     # ------------------------------------------------------------------
